@@ -1828,10 +1828,10 @@ $("miSheet").onclick=async()=>{
     if(!await askOk("구글 시트 불러오기",`${ok.length}건을 불러옵니다. 같은 날짜의 기존 실적은 덮어씁니다.`,"불러오기")) return;
     if(!sheetUrl){ sheetUrl=link; await putSetting("display",{moneyUnit,sheetUrl}); }
     spin(true);
-    const {error}=await sb.from("daily_metrics").upsert(ok,{onConflict:"user_id,date"});
+    const {error,done}=await upsertBatched(ok,$("msgSheet"));
     spin(false);
-    if(error) return say($("msgData"),"저장하지 못했습니다. "+error.message,"err");
-    say($("msgData"),`${ok.length}건 완료${bad.length?` · ${bad.length}건 건너뜀`:""}`,"ok");
+    if(error) return say($("msgSheet"),`저장 중 오류 (${done}/${ok.length} 저장됨). `+error.message,"err");
+    say($("msgSheet"),`${ok.length}건 완료${bad.length?` · ${bad.length}건 건너뜀`:""}`,"ok");
     loadView();
   }catch(e){
     spin(false);
@@ -1858,9 +1858,9 @@ $("fileXlsx").onchange=async e=>{
     if(!ok.length) return say($("msgData"),"올릴 수 있는 행이 없습니다.\n"+bad.slice(0,5).join("\n"),"err");
     if(!await askOk("업로드",`${ok.length}건을 올립니다. 같은 날짜의 기존 실적은 덮어씁니다.`,"올리기")) return;
     spin(true);
-    const {error}=await sb.from("daily_metrics").upsert(ok,{onConflict:"user_id,date"});
+    const {error,done}=await upsertBatched(ok,$("msgData"));
     spin(false);
-    if(error) return say($("msgData"),"올리지 못했습니다. "+error.message,"err");
+    if(error) return say($("msgData"),`올리는 중 오류 (${done}/${ok.length}). `+error.message,"err");
     say($("msgData"),`${ok.length}건 완료${bad.length?` · ${bad.length}건 건너뜀`:""}`,"ok");
     loadView();
   }catch(err){ spin(false); say($("msgData"),"파일을 읽지 못했습니다. "+err.message,"err"); }
@@ -1875,6 +1875,18 @@ $("miTemplate").onclick=()=>{
   const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,"template");
   XLSX.writeFile(wb,"매출캘린더_템플릿.xlsx");
 };
+/* 대량 저장은 배치로 나눈다. Supabase 요청 한도·타임아웃 회피 + 진행률. */
+async function upsertBatched(rows, msgEl){
+  const SIZE=200; let done=0;
+  for(let i=0;i<rows.length;i+=SIZE){
+    const chunk=rows.slice(i,i+SIZE);
+    const {error}=await sb.from("daily_metrics").upsert(chunk,{onConflict:"user_id,date"});
+    if(error) return {error, done};
+    done+=chunk.length;
+    if(msgEl) say(msgEl, `저장 중… ${done}/${rows.length}`, "ok");
+  }
+  return {error:null, done};
+}
 async function fetchAll(){
   const {data,error}=await sb.from("daily_metrics").select("date,sales,cars,target_sales,note").order("date");
   if(error) throw error; return data||[];
@@ -1910,9 +1922,9 @@ $("fileJson").onchange=async e=>{
     if(!Array.isArray(list)||!list.length) return say($("msgData"),"복원할 데이터가 없는 파일입니다.","err");
     if(!await askOk("복원",`${list.length}건을 복원합니다. 같은 날짜의 기존 실적은 덮어씁니다.`,"복원")) return;
     spin(true);
-    const {error}=await sb.from("daily_metrics").upsert(list.map(r=>({...r,updated_at:new Date().toISOString()})),{onConflict:"user_id,date"});
+    const {error,done}=await upsertBatched(list.map(r=>({...r,updated_at:new Date().toISOString()})),$("msgData"));
     spin(false);
-    if(error) return say($("msgData"),"복원하지 못했습니다. "+error.message,"err");
+    if(error) return say($("msgData"),`복원 중 오류 (${done}/${list.length}). `+error.message,"err");
     say($("msgData"),`${list.length}건 복원했습니다. 대비일 프로파일은 복원되지 않습니다.`,"ok");
     loadView();
   }catch(err){ spin(false); say($("msgData"),"파일을 읽지 못했습니다. "+err.message,"err"); }
