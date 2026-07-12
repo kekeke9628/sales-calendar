@@ -397,9 +397,9 @@ footer a{color:var(--ink-3)}
 create table daily_metrics (
   user_id      uuid not null default auth.uid() references auth.users,
   date         date not null,
-  sales        integer not null,   -- VAT 제외, 백만원
-  cars         integer not null,
-  target_sales integer,
+  sales        bigint not null,    -- VAT 제외, 원 단위
+  cars         bigint not null,
+  target_sales bigint,
   note         text,
   updated_at   timestamptz default now(),
   primary key (user_id, date)
@@ -488,6 +488,9 @@ create policy "own" on compare_mappings for all
       <button data-v="day">일별</button>
       <button data-v="week">주차별</button>
       <button data-v="month">월별</button>
+      <button data-v="quarter">분기</button>
+      <button data-v="half">반기</button>
+      <button data-v="year">연간</button>
     </div>
     <div class="vseg" id="mseg">
       <button data-m="sales" class="on">매출</button>
@@ -1070,13 +1073,21 @@ const merge=list=>list.forEach(r=>store.set(r.date,r));
 async function loadView(){
   spin(true); $("offline").classList.remove("on");
   const [mFirst,mLast]=monthBounds(cursor);
-  const from = view==="month" ? new Date(cursor.getFullYear(),0,1) : mFirst;
-  const to   = view==="month" ? new Date(cursor.getFullYear(),11,31) : mLast;
-  const days = daysOf(from,to);
-  const cmps = days.map(resolveCompare);
-  const cLo=new Date(Math.min(...cmps)), cHi=new Date(Math.max(...cmps));
-  const cmFirst=new Date(cLo.getFullYear(),cLo.getMonth(),1);   // 월누계 비교용
-  const lo=new Date(Math.min(from,cmFirst)), hi=new Date(Math.max(to,cHi));
+  const yv=["month","quarter","half","year"].includes(view);
+  const spanYears = view==="year" ? 5 : 1;   // 연간은 최근 5개년
+  const from = yv ? new Date(cursor.getFullYear()-(spanYears-1),0,1) : mFirst;
+  const to   = yv ? new Date(cursor.getFullYear(),11,31) : mLast;
+  let lo,hi;
+  if(yv){
+    /* 전년 같은 기간 비교를 위해 시작연도의 전년까지 로딩 */
+    lo=new Date(from.getFullYear()-1,0,1); hi=to;
+  }else{
+    const days=daysOf(from,to);
+    const cmps=days.map(resolveCompare);
+    const cLo=new Date(Math.min(...cmps)), cHi=new Date(Math.max(...cmps));
+    const cmFirst=new Date(cLo.getFullYear(),cLo.getMonth(),1);
+    lo=new Date(Math.min(from,cmFirst)); hi=new Date(Math.max(to,cHi));
+  }
 
   try{
     const rows=await fetchRange(lo,hi);
@@ -1088,7 +1099,7 @@ async function loadView(){
   }
   wx=new Map(); render();
 
-  if(view!=="month"){
+  if(!["month","quarter","half","year"].includes(view)){
     const want=new Set();
     daysOf(mFirst,mLast).forEach(d=>{
       const k=iso(d); if(k<=todayISO) want.add(k);
@@ -1102,7 +1113,7 @@ async function loadView(){
 }
 
 /* ---------- 집계 ---------- */
-/* 달성률은 기간 내 모든 날에 목표가 있을 때만 계산한다 */
+/* 일 단위 대비: 대비일 규칙 (주차별). 달성률은 모든 날 목표가 있을 때만. */
 function agg(days,field){
   let cur=null,cmp=null,tgt=0,full=(field==="sales");
   days.forEach(d=>{
@@ -1111,6 +1122,19 @@ function agg(days,field){
     if(c&&c[field]!=null) cmp=(cmp||0)+c[field];
     if(full){ if(r&&r.target_sales!=null) tgt+=r.target_sales; else full=false; }
   });
+  return {cur,cmp,tgt:full?tgt:null};
+}
+/* 기간 단위 대비: 전년 같은 기간(1년 전 같은 날짜들). 월/분기/반기/연간용. */
+function aggYoY(from,to,field){
+  let cur=null,cmp=null,tgt=0,full=(field==="sales");
+  for(let d=new Date(from); d<=to; d=addDays(d,1)){
+    const r=store.get(iso(d));
+    const py=new Date(d.getFullYear()-1,d.getMonth(),d.getDate());
+    const c=store.get(iso(py));
+    if(r&&r[field]!=null) cur=(cur||0)+r[field];
+    if(c&&c[field]!=null) cmp=(cmp||0)+c[field];
+    if(full){ if(r&&r.target_sales!=null) tgt+=r.target_sales; else full=false; }
+  }
   return {cur,cmp,tgt:full?tgt:null};
 }
 
@@ -1132,7 +1156,7 @@ $("noticeClose").onclick=()=>{noticeHidden=true;$("notice").classList.remove("on
 
 /* ---------- 월누계 ---------- */
 function renderMTD(){
-  if(view==="month"){ $("mtd").innerHTML=""; $("mtdCap").textContent=`${cursor.getFullYear()}년 전체`; return; }
+  if(["month","quarter","half","year"].includes(view)){ $("mtd").innerHTML=""; $("mtdCap").textContent = view==="year"?"최근 5개년":`${cursor.getFullYear()}년 전체`; return; }
   const [first,last]=monthBounds(cursor);
   const thisMonth=cursor.getFullYear()===TODAY.getFullYear()&&cursor.getMonth()===TODAY.getMonth();
   const endDay=thisMonth?TODAY.getDate()-1:last.getDate();
@@ -1279,27 +1303,47 @@ function renderWeek(){
     <th>주차</th><th>매출(${moneyU()})</th><th>신장률</th><th>달성률</th><th>입차</th><th>신장률</th>
   </tr></thead><tbody>${rows}</tbody></table>`;
 }
-function renderMonth(){
-  const y=cursor.getFullYear();
-  const rows=[...Array(12).keys()].map(m=>{
-    const days=daysOf(new Date(y,m,1),new Date(y,m+1,0));
-    const s=agg(days,"sales"), c=agg(days,"cars");
-    return `<tr><td>${m+1}월</td>
+/* 기간 표: label+[from,to] 목록을 전년 같은 기간과 비교 */
+function periodTable(title, periods){
+  const rows=periods.map(pr=>{
+    const s=aggYoY(pr.from,pr.to,"sales"), c=aggYoY(pr.from,pr.to,"cars");
+    return `<tr><td>${pr.label}</td>
       <td class="num">${money(s.cur)}<span class="sm">대비 ${money(s.cmp)}</span></td>
       ${rateTd(growth(s.cur,s.cmp))}
       <td class="num">${s.tgt?(s.cur/s.tgt*100).toFixed(1)+"%":"—"}</td>
-      <td class="num">${fmt(c.cur)}</td>
+      <td class="num">${fmt(c.cur)}<span class="sm">대비 ${fmt(c.cmp)}</span></td>
       ${rateTd(growth(c.cur,c.cmp))}</tr>`;
   }).join("");
   $("view").innerHTML=`<table class="agg"><thead><tr>
-    <th>월</th><th>매출(${moneyU()})</th><th>신장률</th><th>달성률</th><th>입차</th><th>신장률</th>
+    <th>${title}</th><th>매출(${moneyU()})</th><th>신장률</th><th>달성률</th><th>입차</th><th>신장률</th>
   </tr></thead><tbody>${rows}</tbody></table>`;
+}
+function renderMonth(){
+  const y=cursor.getFullYear();
+  periodTable("월",[...Array(12).keys()].map(m=>({label:`${m+1}월`,from:new Date(y,m,1),to:new Date(y,m+1,0)})));
+}
+function renderQuarter(){
+  const y=cursor.getFullYear();
+  periodTable("분기",[0,1,2,3].map(q=>({label:`${q+1}분기`,from:new Date(y,q*3,1),to:new Date(y,q*3+3,0)})));
+}
+function renderHalf(){
+  const y=cursor.getFullYear();
+  periodTable("반기",[
+    {label:"상반기",from:new Date(y,0,1),to:new Date(y,6,0)},
+    {label:"하반기",from:new Date(y,6,1),to:new Date(y,12,0)}
+  ]);
+}
+function renderYear(){
+  const y=cursor.getFullYear(), list=[];
+  for(let yy=y-4; yy<=y; yy++) list.push({label:`${yy}년`,from:new Date(yy,0,1),to:new Date(yy,12,0)});
+  periodTable("연도",list);
 }
 function render(){
   renderNotice();
-  $("moLabel").textContent = view==="month" ? `${cursor.getFullYear()}년` : `${cursor.getFullYear()}.${pad(cursor.getMonth()+1)}`;
+  const yearView=["month","quarter","half","year"].includes(view);
+  $("moLabel").textContent = yearView ? `${cursor.getFullYear()}년` : `${cursor.getFullYear()}.${pad(cursor.getMonth()+1)}`;
   renderMTD();
-  view==="cal"?renderCal():view==="day"?renderDay():view==="week"?renderWeek():renderMonth();
+  ({cal:renderCal,day:renderDay,week:renderWeek,month:renderMonth,quarter:renderQuarter,half:renderHalf,year:renderYear}[view]||renderCal)();
 }
 window.addEventListener("resize",()=>{ if(sb&&$("scApp").classList.contains("on")) render(); });
 
@@ -1962,8 +2006,9 @@ $("vseg").onclick=e=>{
   [...$("vseg").children].forEach(x=>x.classList.toggle("on",x===b));
   loadView();
 };
-$("prevM").onclick=()=>{cursor=view==="month"?new Date(cursor.getFullYear()-1,0,1):new Date(cursor.getFullYear(),cursor.getMonth()-1,1);loadView()};
-$("nextM").onclick=()=>{cursor=view==="month"?new Date(cursor.getFullYear()+1,0,1):new Date(cursor.getFullYear(),cursor.getMonth()+1,1);loadView()};
+const yearScoped=()=>["month","quarter","half","year"].includes(view);
+$("prevM").onclick=()=>{cursor=yearScoped()?new Date(cursor.getFullYear()-1,0,1):new Date(cursor.getFullYear(),cursor.getMonth()-1,1);loadView()};
+$("nextM").onclick=()=>{cursor=yearScoped()?new Date(cursor.getFullYear()+1,0,1):new Date(cursor.getFullYear(),cursor.getMonth()+1,1);loadView()};
 $("btnToday").onclick=()=>{cursor=new Date();loadView()};
 
 /* ---------- 부팅 ---------- */
