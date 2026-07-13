@@ -897,6 +897,22 @@ function autoCompare(d){
   return back<=fwd?addDays(base,-back):addDays(base,fwd);
 }
 function sameDate(d){ return new Date(d.getFullYear()-1, d.getMonth(), d.getDate()); }
+/* 전년 동월 동요일: 전년 같은 날짜에서 가장 가까운 같은 요일.
+   단 그 결과가 전년의 그 달을 벗어나면 전년 그 달 1일로 고정. */
+function prevYearWeekday(d){
+  const base=sameDate(d);                    // 1년 전 같은 월·일
+  const t=d.getDay(), c=base.getDay();
+  let r=base;
+  if(c!==t){
+    const back=(c-t+7)%7, fwd=(t-c+7)%7;
+    r = back<=fwd ? addDays(base,-back) : addDays(base,fwd);
+  }
+  // 전년 그 달을 벗어나면 그 달 1일로
+  if(r.getMonth()!==base.getMonth() || r.getFullYear()!==base.getFullYear()){
+    return new Date(base.getFullYear(), base.getMonth(), 1);
+  }
+  return r;
+}
 /* 대비일 모드: 날짜별 지정(mappings)이 있으면 그것, 없으면 동요일 규칙.
    지정은 월 구분 없이 전역 하나로 동작한다. */
 function resolveCompare(d){
@@ -1504,14 +1520,14 @@ function renderCmpMonth(){
 }
 $("peAutoFill").onclick=async()=>{
   const [f,l]=monthBounds(cmpCursor);
-  const list=daysOf(f,l).map(d=>({base_date:iso(d),compare_date:iso(sameDate(d))}));
+  const list=daysOf(f,l).map(d=>({base_date:iso(d),compare_date:iso(prevYearWeekday(d))}));
   spin(true);
   const {error}=await sb.from("compare_days").upsert(list,{onConflict:"user_id,base_date"});
   spin(false);
   if(error) return say($("msgCmp"),"채우지 못했습니다. "+error.message);
   list.forEach(r=>mappings.set(r.base_date,r.compare_date));
   syncCmpLabel(); renderCmpMonth(); loadView();
-  say($("msgCmp"),`${list.length}일을 전년 동월로 채웠습니다. 개별 수정도 가능합니다.`,"ok");
+  say($("msgCmp"),`${list.length}일을 전년 동월 동요일로 채웠습니다. 개별 수정도 가능합니다.`,"ok");
 };
 $("peClear").onclick=async()=>{
   const [f,l]=monthBounds(cmpCursor);
