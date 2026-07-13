@@ -50,7 +50,7 @@ header{position:sticky;top:0;z-index:20;background:var(--bg);border-bottom:1px s
 .spacer{flex:1}
 .icon{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font-size:14px;color:var(--ink-2);
   border:1px solid var(--rule);background:var(--card)}
-.hbar2{display:flex;align-items:center;gap:6px;padding-bottom:10px;overflow-x:auto;scrollbar-width:none}
+.hbar2{display:flex;align-items:center;gap:5px;padding-bottom:10px;overflow-x:auto;scrollbar-width:none}
 .hbar2::-webkit-scrollbar{display:none}
 .chip{font-size:11.5px;padding:6px 11px;border:1px solid var(--rule);border-radius:99px;color:var(--ink-2);
   font-weight:550;white-space:nowrap;flex:none;background:var(--card)}
@@ -58,18 +58,24 @@ header{position:sticky;top:0;z-index:20;background:var(--bg);border-bottom:1px s
 .vseg{display:flex;background:var(--card);border:1px solid var(--rule);border-radius:99px;padding:2px;flex:none}
 .vseg button{padding:5px 11px;font-size:11.5px;color:var(--ink-2);font-weight:600;border-radius:99px}
 .vseg button.on{background:var(--ink);color:var(--bg)}
+.dd{-webkit-appearance:none;appearance:none;font-size:12px;font-weight:600;
+  padding:6px 26px 6px 12px;border:1px solid var(--rule);border-radius:99px;
+  color:var(--ink);background:var(--card);flex:none;cursor:pointer;
+  background-image:url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23999' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 9px center}
+.dd:focus{outline:none;border-color:var(--accent)}
 
 .notice{display:none;align-items:flex-start;gap:10px;margin-top:12px;padding:11px 12px;
   background:var(--accent-soft);border:1px solid var(--accent);border-radius:var(--r-sm)}
 .notice.on{display:flex}
 .notice .nx{flex:1;font-size:12px;line-height:1.6;color:var(--accent);font-weight:600}
 .notice button{color:var(--accent);font-size:13px;padding:0 2px;line-height:1.4;opacity:.7}
-.mtd{display:grid;grid-template-columns:1fr 1fr;gap:7px;padding:12px 0 2px}
-.sum{background:var(--card);border:1px solid var(--rule);border-radius:var(--r);padding:12px 13px;box-shadow:var(--shadow)}
-.sum .lab{font-size:10px;color:var(--ink-3);font-weight:650;letter-spacing:.06em;text-transform:uppercase}
-.sum .big{font-size:23px;font-weight:700;letter-spacing:-.035em;margin-top:5px;line-height:1}
+.mtd{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;padding:12px 0 2px}
+.sum{background:var(--card);border:1px solid var(--rule);border-radius:var(--r);padding:10px 11px;box-shadow:var(--shadow);min-width:0}
+.sum .lab{font-size:9px;color:var(--ink-3);font-weight:650;letter-spacing:.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sum .big{font-size:clamp(15px,4.6vw,21px);font-weight:700;letter-spacing:-.04em;margin-top:5px;line-height:1;white-space:nowrap}
 .sum .big .u{font-size:10.5px;font-weight:500;color:var(--ink-3);margin-left:3px;letter-spacing:0}
-.sum .sub{font-size:11px;color:var(--ink-2);margin-top:7px;display:flex;align-items:baseline;gap:6px}
+.sum .sub{font-size:10px;color:var(--ink-2);margin-top:6px;display:flex;align-items:baseline;gap:4px;flex-wrap:wrap}
 .sum .ach{font-size:10.5px;color:var(--ink-3);margin-top:3px}
 .sum .ach b{color:var(--ink-2);font-weight:600}
 .mtdcap{font-size:10px;color:var(--ink-3);padding:7px 3px 0;line-height:1.5;letter-spacing:.01em}
@@ -293,7 +299,7 @@ table.agg tr:last-child td{border-bottom:none}
 table.agg .up{color:var(--up);font-weight:700} table.agg .down{color:var(--down);font-weight:700} table.agg .flat{color:var(--flat)}
 
 @media(min-width:900px){
-  .mtd{grid-template-columns:repeat(2,minmax(0,320px))}
+  .mtd{grid-template-columns:repeat(3,minmax(0,240px))}
   .gcell{min-height:168px;padding:9px 7px 8px}
   .gcell .gh{font-size:9.5px}
   .gcell .gn{font-size:15px}
@@ -483,20 +489,30 @@ create policy "own" on compare_mappings for all
     <button class="icon" id="btnData">⋯</button>
   </div>
   <div class="hbar2">
-    <div class="vseg" id="vseg">
-      <button data-v="cal" class="on">캘린더</button>
-      <button data-v="day">일별</button>
-      <button data-v="week">주차별</button>
-      <button data-v="month">월별</button>
-      <button data-v="quarter">분기</button>
-      <button data-v="half">반기</button>
-      <button data-v="year">연간</button>
-    </div>
-    <div class="vseg" id="mseg">
-      <button data-m="sales" class="on">매출</button>
-      <button data-m="cars">입차</button>
-    </div>
-    <button class="chip" id="btnUnit">백만</button>
+    <select class="dd" id="ddView" aria-label="기간">
+      <option value="cal">캘린더</option>
+      <option value="day">일별</option>
+      <option value="month">월별</option>
+      <option value="quarter">분기</option>
+      <option value="half">반기</option>
+      <option value="year">연간</option>
+    </select>
+    <select class="dd" id="ddMetric" aria-label="지표">
+      <option value="sales">매출</option>
+      <option value="cars">입차</option>
+      <option value="ppc">입차단가</option>
+    </select>
+    <select class="dd" id="ddUnit" aria-label="단위">
+      <option value="won">원</option>
+      <option value="th">천원</option>
+      <option value="mn" selected>백만</option>
+      <option value="bn">억</option>
+    </select>
+    <select class="dd" id="ddCmp" aria-label="대비 기준">
+      <option value="profile">대비일</option>
+      <option value="date">동일자</option>
+      <option value="weekday" selected>동요일</option>
+    </select>
     <button class="chip" id="btnRange">기간 비교</button>
     <button class="chip" id="btnRegion">여주</button>
   </div>
@@ -704,7 +720,7 @@ create policy "own" on compare_mappings for all
 const CFG_KEY="salescal.cfg";
 const DEFAULT_REGION={name:"여주",lat:37.298,lon:127.637};
 
-let sb=null, cursor=new Date(), view="cal", metric="sales", moneyUnit="mn", sheetUrl="";
+let sb=null, cursor=new Date(), view="cal", metric="sales", moneyUnit="mn", sheetUrl="", cmpMode="weekday";
 let store=new Map(), wx=new Map(), region=DEFAULT_REGION;
 let profiles=[], activeId=null, mappings=new Map(), editId=null, editMappings=new Map();
 let editing=null, entCursor=new Date();
@@ -716,7 +732,24 @@ const UNITS={
   mn: {label:"백만", div:1e6, dp:0},
   bn: {label:"억",   div:1e8, dp:1}
 };
-const METRIC={sales:{unit:()=>UNITS[moneyUnit].label,label:"매출"}, cars:{unit:()=>"대",label:"입차"}};
+const METRIC={
+  sales:{unit:()=>UNITS[moneyUnit].label,label:"매출", money:true},
+  cars: {unit:()=>"대",                  label:"입차", money:false},
+  ppc:  {unit:()=>UNITS[moneyUnit].label,label:"입차단가", money:true}
+};
+function metricVal(r, mk){
+  mk = mk||metric;
+  if(!r) return null;
+  if(mk==="ppc") return (r.sales!=null && r.cars) ? r.sales/r.cars : null;
+  return r[mk]!=null ? r[mk] : null;
+}
+function metricFmt(v, mk){
+  mk = mk||metric;
+  if(v==null) return "—";
+  if(mk==="ppc") return Math.round(v).toLocaleString("ko-KR");
+  return METRIC[mk].money ? money(v) : fmt(v);
+}
+function unitOf(mk){ mk=mk||metric; return mk==="ppc" ? "원" : METRIC[mk].unit(); }
 
 /* ===== 공휴일 · 절기 =====
    매년 초에 이 두 표만 갱신하면 된다.
@@ -867,7 +900,10 @@ function autoCompare(d){
   return back<=fwd?addDays(base,-back):addDays(base,fwd);
 }
 const activeProfile=()=>profiles.find(p=>p.id===activeId)||null;
+function sameDate(d){ return new Date(d.getFullYear()-1, d.getMonth(), d.getDate()); }
 function resolveCompare(d){
+  if(cmpMode==="date") return sameDate(d);
+  if(cmpMode==="weekday") return autoCompare(d);
   const k=iso(d), p=activeProfile();
   if(p){
     if(mappings.has(k)) return parseISO(mappings.get(k));
@@ -1031,7 +1067,7 @@ async function loadSettings(){
     });
   }catch(e){}
   $("btnRegion").textContent=region.name; $("rgNow").textContent=region.name;
-  $("btnUnit").textContent=UNITS[moneyUnit].label;
+  syncControls();
   if($("inSheet")) $("inSheet").value=sheetUrl||"";
 }
 async function loadProfiles(){
@@ -1169,17 +1205,25 @@ function renderMTD(){
   const sumBy=(list,f)=>{let s=null;list.forEach(d=>{const r=store.get(iso(d));if(r&&r[f]!=null)s=(s||0)+r[f]});return s};
   const sumTgtBy=(list)=>{let s=0;for(const d of list){const r=store.get(iso(d));if(!r||r.target_sales==null)return null;s+=r.target_sales}return s};
 
+  const S={sales:sumBy(monthDays,"sales"), cars:sumBy(monthDays,"cars")};
+  const C={sales:sumBy(cmpDays,"sales"),  cars:sumBy(cmpDays,"cars")};
+  const ppc=(sa,ca)=>(sa!=null&&ca)?sa/ca:null;
+  const tgt=sumTgtBy(monthDays);
+  const valOf=(o,k)=> k==="ppc"?ppc(o.sales,o.cars):o[k];
   const cards=[
-    {k:"sales",lab:"매출 월누계",u:moneyU(),f:"sales",t:true},
-    {k:"cars", lab:"입차 월누계",u:"대",  f:"cars", t:false}
+    {k:"sales",lab:"매출 월누계",   money:true},
+    {k:"cars", lab:"입차 월누계",   money:false},
+    {k:"ppc",  lab:"입차단가 월누계",money:true}
   ].sort((a,b)=>(a.k===metric?-1:b.k===metric?1:0));
 
   $("mtd").innerHTML=cards.map(c=>{
-    const cur=sumBy(monthDays,c.f), cmp=sumBy(cmpDays,c.f), tgt=c.t?sumTgtBy(monthDays):null;
-    const ach=(cur!=null&&tgt)?`<div class="ach">목표 대비 <b>${(cur/tgt*100).toFixed(1)}%</b></div>`:"";
+    const cur=valOf(S,c.k), cmp=valOf(C,c.k);
+    const u = c.k==="ppc"?"원" : (c.money?moneyU():"대");
+    const ach=(c.k==="sales"&&cur!=null&&tgt)?`<div class="ach">목표 대비 <b>${(cur/tgt*100).toFixed(1)}%</b></div>`:"";
+    const f = v=>metricFmt(v,c.k);
     return `<div class="sum"><div class="lab">${c.lab}</div>
-      <div class="big num">${c.f==="sales"?money(cur):fmt(cur)}<span class="u">${c.u}</span></div>
-      <div class="sub"><span class="num">대비 ${c.f==="sales"?money(cmp):fmt(cmp)}</span>${rateEl(growth(cur,cmp))}</div>${ach}</div>`;
+      <div class="big num">${f(cur)}<span class="u">${u}</span></div>
+      <div class="sub"><span class="num">대비 ${f(cmp)}</span>${rateEl(growth(cur,cmp))}</div>${ach}</div>`;
   }).join("");
   const yy=n=>String(n).slice(2);
   const cs=cmpDays[0], ce=cmpDays[cmpDays.length-1];
@@ -1189,13 +1233,13 @@ function renderMTD(){
 /* ---------- 캘린더 그리드 ---------- */
 function gCell(d,outMonth){
   const k=iso(d), cd=resolveCompare(d), ck=iso(cd), r=store.get(k), c=store.get(ck);
-  const cur=r?r[metric]:null, cmp=c?c[metric]:null;
+  const cur=metricVal(r), cmp=metricVal(c);
   const g=growth(cur,cmp), w=wxOf(k), cw=wxOf(ck);
   const cls=["gcell", outMonth?"out":"", dayCls(k,d), k===todayISO?"today":""].join(" ");
   const lb=dayLabel(k);
   const gtop=`<div class="gtop"><span class="gn num">${d.getDate()}</span><span class="gwi">${w?ICON(w.code):""}</span></div>`;
   const gh = lb ? `<div class="gh ${lb.red?"red":lb.term?"term":""}">${lb.t}</div>` : "";
-  const gs = cur!=null ? `<div class="gs num">${metric==="sales"?money(cur):fmt(cur)}</div>` : `<div class="gs num dim">—</div>`;
+  const gs = cur!=null ? `<div class="gs num">${metricFmt(cur)}</div>` : `<div class="gs num dim">—</div>`;
   const gr = g==null ? `<div class="gr flat">—</div>`
     : `<div class="gr num ${g>0?"r up":"r down"}">${g>0?"+":""}${g.toFixed(1)}%</div>`;
   const note = (r&&r.note) ? `<div class="gnote" data-note="${k}" role="button" title="${esc(r.note)}">✎ ${esc(r.note)}</div>` : "";
@@ -1205,7 +1249,7 @@ function gCell(d,outMonth){
       <span class="cw ${isRed(ck,cd)?"chol":""}">${WD[cd.getDay()]}</span>
       <span class="cwi">${cw?ICON(cw.code):""}</span>
     </div>
-    <div class="cv num">${metric==="sales"?money(cmp):fmt(cmp)}</div></div>`;
+    <div class="cv num">${metricFmt(cmp)}</div></div>`;
   return `<div class="${cls}" data-date="${k}" role="button" tabindex="0">${gtop}${gs}${gr}${note}${gh}${gcmp}</div>`;
 }
 function renderCal(){
@@ -1215,7 +1259,7 @@ function renderCal(){
   $("view").innerHTML=`<div class="gridwrap">
     <div class="gdow">${WD.map(w=>`<div>${w}</div>`).join("")}</div>
     <div class="grid">${cells}</div></div>
-    <div class="mtdcap" style="margin-top:-14px;padding-bottom:16px">위 = 기준일 ${METRIC[metric].label} (${METRIC[metric].unit()}) · 아래 = 대비일 날짜·날씨·${METRIC[metric].label}</div>`;
+    <div class="mtdcap" style="margin-top:-14px;padding-bottom:16px">위 = 기준일 ${METRIC[metric].label} (${unitOf()}) · 아래 = 대비일 날짜·날씨·${METRIC[metric].label}</div>`;
   bindCells(".gcell");
 }
 function bindCells(sel){
@@ -1250,6 +1294,12 @@ function metricLine(k,cur,cmp,u,isMoney){
   return `<div class="line"><span class="k">${k}</span><span class="v num">${f(cur)}</span><span class="u">${u}</span>
     <span class="cmp num">vs ${f(cmp)}</span>${rateEl(growth(cur,cmp))}</div>`;
 }
+function ppcLine(cur,cmp){
+  if(cur==null&&cmp==null) return "";
+  const f=v=>v==null?"—":Math.round(v).toLocaleString("ko-KR");
+  return `<div class="line"><span class="k">입차단가</span><span class="v num">${f(cur)}</span><span class="u">원</span>
+    <span class="cmp num">vs ${f(cmp)}</span>${rateEl(growth(cur,cmp))}</div>`;
+}
 function dayCard(d){
   const key=iso(d), ck=iso(resolveCompare(d)), r=store.get(key), c=store.get(ck), wd=d.getDay();
   let inner=wxLine(key,ck);
@@ -1257,6 +1307,7 @@ function dayCard(d){
   else{
     inner+=metricLine("매출",r.sales,c?c.sales:null,moneyU(),true);
     inner+=metricLine("입차",r.cars,c?c.cars:null,"대",false);
+    inner+=ppcLine(metricVal(r,"ppc"),metricVal(c,"ppc"));
     if(r.target_sales) inner+=`<div class="ach">매출 달성 <b>${(r.sales/r.target_sales*100).toFixed(1)}%</b></div>`;
     if(r.note) inner+=`<div class="notepill" data-note="${key}">✎ ${esc(r.note)}</div>`;
   }
@@ -1277,36 +1328,6 @@ function renderDay(){
 }
 
 /* ---------- 주차별 / 월별 ---------- */
-const monIdx=d=>(d.getDay()+6)%7;
-function weeksOf(a,b){
-  const start=addDays(a,-monIdx(a)), end=addDays(b,6-monIdx(b));
-  const all=daysOf(start,end), out=[];
-  for(let i=0;i<all.length;i+=7) out.push(all.slice(i,i+7));
-  return out;
-}
-function renderWeek(){
-  const [first,last]=monthBounds(cursor);
-  const span=(x,y)=>`${x.getFullYear()===y.getFullYear()?fmtMD(x):fmtYY(x)}~${fmtEnd(x,y)}`;
-  const rows=weeksOf(first,last).map((days,i)=>{
-    const s=agg(days,"sales"), c=agg(days,"cars");
-    const a0=days[0], a1=days[days.length-1];
-    const b0=resolveCompare(a0), b1=resolveCompare(a1);
-    const spill=days.filter(x=>x.getMonth()!==cursor.getMonth()).length;
-    return `<tr>
-      <td>${i+1}주차
-        <span class="sm">${span(a0,a1)}${spill?` · 타월 ${spill}일`:""}</span>
-        <span class="sm dim">대비 ${span(b0,b1)}</span></td>
-      <td class="num">${money(s.cur)}<span class="sm">대비 ${money(s.cmp)}</span></td>
-      ${rateTd(growth(s.cur,s.cmp))}
-      <td class="num">${s.tgt?(s.cur/s.tgt*100).toFixed(1)+"%":"—"}</td>
-      <td class="num">${fmt(c.cur)}<span class="sm">대비 ${fmt(c.cmp)}</span></td>
-      ${rateTd(growth(c.cur,c.cmp))}</tr>`;
-  }).join("");
-  $("view").innerHTML=`<table class="agg"><thead><tr>
-    <th>주차</th><th>매출(${moneyU()})</th><th>신장률</th><th>달성률</th><th>입차</th><th>신장률</th>
-  </tr></thead><tbody>${rows}</tbody></table>`;
-}
-/* 기간 표: label+[from,to] 목록을 전년 같은 기간과 비교 */
 function periodTable(title, periods){
   const rows=periods.map(pr=>{
     const s=aggYoY(pr.from,pr.to,"sales"), c=aggYoY(pr.from,pr.to,"cars");
@@ -1346,7 +1367,7 @@ function render(){
   const yearView=["month","quarter","half","year"].includes(view);
   $("moLabel").textContent = yearView ? `${cursor.getFullYear()}년` : `${cursor.getFullYear()}.${pad(cursor.getMonth()+1)}`;
   renderMTD();
-  ({cal:renderCal,day:renderDay,week:renderWeek,month:renderMonth,quarter:renderQuarter,half:renderHalf,year:renderYear}[view]||renderCal)();
+  ({cal:renderCal,day:renderDay,month:renderMonth,quarter:renderQuarter,half:renderHalf,year:renderYear}[view]||renderCal)();
 }
 window.addEventListener("resize",()=>{ if(sb&&$("scApp").classList.contains("on")) render(); });
 
@@ -1990,25 +2011,19 @@ $("miReset").onclick=async()=>{
 };
 
 /* ---------- 내비 ---------- */
-$("btnUnit").onclick=async()=>{
-  const order=["won","th","mn","bn"];
-  moneyUnit=order[(order.indexOf(moneyUnit)+1)%order.length];
-  $("btnUnit").textContent=UNITS[moneyUnit].label;
-  render();
+$("ddView").onchange=e=>{ view=e.target.value; loadView(); };
+$("ddMetric").onchange=e=>{ metric=e.target.value; render(); };
+$("ddUnit").onchange=async e=>{
+  moneyUnit=e.target.value; render();
   try{ await putSetting("display",{moneyUnit,sheetUrl}); }catch(e){}
 };
-$("mseg").onclick=e=>{
-  const b=e.target.closest("button"); if(!b) return;
-  metric=b.dataset.m;
-  [...$("mseg").children].forEach(x=>x.classList.toggle("on",x===b));
-  render();
-};
-$("vseg").onclick=e=>{
-  const b=e.target.closest("button"); if(!b) return;
-  view=b.dataset.v;
-  [...$("vseg").children].forEach(x=>x.classList.toggle("on",x===b));
-  loadView();
-};
+$("ddCmp").onchange=e=>{ cmpMode=e.target.value; loadView(); };
+function syncControls(){
+  if($("ddView")) $("ddView").value=view;
+  if($("ddMetric")) $("ddMetric").value=metric;
+  if($("ddUnit")) $("ddUnit").value=moneyUnit;
+  if($("ddCmp")) $("ddCmp").value=cmpMode;
+}
 const yearScoped=()=>["month","quarter","half","year"].includes(view);
 $("prevM").onclick=()=>{cursor=yearScoped()?new Date(cursor.getFullYear()-1,0,1):new Date(cursor.getFullYear(),cursor.getMonth()-1,1);loadView()};
 $("nextM").onclick=()=>{cursor=yearScoped()?new Date(cursor.getFullYear()+1,0,1):new Date(cursor.getFullYear(),cursor.getMonth()+1,1);loadView()};
