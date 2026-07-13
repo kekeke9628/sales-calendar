@@ -1228,7 +1228,8 @@ function renderMTD(){
   }).join("");
   const yy=n=>String(n).slice(2);
   const cs=cmpDays[0], ce=cmpDays[cmpDays.length-1];
-  $("mtdCap").textContent=`기준 ${yy(y)}.${m+1}.1~${m+1}.${endDay} (${endDay}일)  vs  ${yy(cs.getFullYear())}.${cs.getMonth()+1}.${cs.getDate()}~${ce.getMonth()+1}.${ce.getDate()} (${endDay}일)`;
+  const cmpName={weekday:"동요일",date:"동일자",profile:"대비일"}[cmpMode]||"대비일";
+  $("mtdCap").textContent=`기준 ${yy(y)}.${m+1}.1~${m+1}.${endDay} (${endDay}일) · ${cmpName} 대비`;
 }
 
 /* ---------- 캘린더 그리드 ---------- */
