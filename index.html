@@ -1162,10 +1162,12 @@ function renderMTD(){
   const endDay=thisMonth?TODAY.getDate()-1:last.getDate();
   if(endDay<1){ $("mtd").innerHTML=""; $("mtdCap").textContent="이번 달 첫날입니다. 월누계는 내일부터 표시됩니다."; return; }
   const y=cursor.getFullYear(), m=cursor.getMonth();
-  const cF=resolveCompare(first), cy=cF.getFullYear(), cm=cF.getMonth();
-  const cEnd=Math.min(endDay,new Date(cy,cm+1,0).getDate());
-  const sum=(yy,mm,to,f)=>{let s=null;for(let n=1;n<=to;n++){const r=store.get(`${yy}-${pad(mm+1)}-${pad(n)}`);if(r&&r[f]!=null)s=(s||0)+r[f]}return s};
-  const sumTgt=(yy,mm,to)=>{let s=0;for(let n=1;n<=to;n++){const r=store.get(`${yy}-${pad(mm+1)}-${pad(n)}`);if(!r||r.target_sales==null)return null;s+=r.target_sales}return s};
+  /* 월누계 대비는 캘린더 셀과 동일하게 "각 날짜의 대비일"을 개별 합산한다.
+     통짜(대비월 1일부터)로 세면 요일 맞춘 대비일과 하루씩 어긋나 신장률이 틀어진다. */
+  const monthDays=[]; for(let n=1;n<=endDay;n++) monthDays.push(new Date(y,m,n));
+  const cmpDays=monthDays.map(resolveCompare);
+  const sumBy=(list,f)=>{let s=null;list.forEach(d=>{const r=store.get(iso(d));if(r&&r[f]!=null)s=(s||0)+r[f]});return s};
+  const sumTgtBy=(list)=>{let s=0;for(const d of list){const r=store.get(iso(d));if(!r||r.target_sales==null)return null;s+=r.target_sales}return s};
 
   const cards=[
     {k:"sales",lab:"매출 월누계",u:moneyU(),f:"sales",t:true},
@@ -1173,14 +1175,15 @@ function renderMTD(){
   ].sort((a,b)=>(a.k===metric?-1:b.k===metric?1:0));
 
   $("mtd").innerHTML=cards.map(c=>{
-    const cur=sum(y,m,endDay,c.f), cmp=sum(cy,cm,cEnd,c.f), tgt=c.t?sumTgt(y,m,endDay):null;
+    const cur=sumBy(monthDays,c.f), cmp=sumBy(cmpDays,c.f), tgt=c.t?sumTgtBy(monthDays):null;
     const ach=(cur!=null&&tgt)?`<div class="ach">목표 대비 <b>${(cur/tgt*100).toFixed(1)}%</b></div>`:"";
     return `<div class="sum"><div class="lab">${c.lab}</div>
       <div class="big num">${c.f==="sales"?money(cur):fmt(cur)}<span class="u">${c.u}</span></div>
       <div class="sub"><span class="num">대비 ${c.f==="sales"?money(cmp):fmt(cmp)}</span>${rateEl(growth(cur,cmp))}</div>${ach}</div>`;
   }).join("");
   const yy=n=>String(n).slice(2);
-  $("mtdCap").textContent=`기준 ${yy(y)}.${m+1}.1~${m+1}.${endDay} (${endDay}일)  vs  ${yy(cy)}.${cm+1}.1~${cm+1}.${cEnd} (${cEnd}일)`;
+  const cs=cmpDays[0], ce=cmpDays[cmpDays.length-1];
+  $("mtdCap").textContent=`기준 ${yy(y)}.${m+1}.1~${m+1}.${endDay} (${endDay}일)  vs  ${yy(cs.getFullYear())}.${cs.getMonth()+1}.${cs.getDate()}~${ce.getMonth()+1}.${ce.getDate()} (${endDay}일)`;
 }
 
 /* ---------- 캘린더 그리드 ---------- */
