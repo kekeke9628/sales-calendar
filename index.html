@@ -543,6 +543,10 @@ create policy "own" on compare_mappings for all
     <div class="dlgt" id="dlgTitle">—</div>
     <div class="dlgm" id="dlgMsg"></div>
     <input id="dlgInput" style="display:none">
+    <div id="dlgYM" style="display:none;gap:8px;margin-top:4px">
+      <select class="dd" id="dlgYear" style="flex:1"></select>
+      <select class="dd" id="dlgMonth" style="flex:1"></select>
+    </div>
     <div class="dlgb">
       <button id="dlgCancel">취소</button>
       <button id="dlgOk" class="prim">확인</button>
@@ -738,7 +742,7 @@ const UNITS={
 };
 const METRIC={
   sales:{unit:()=>UNITS[moneyUnit].label,label:"매출", money:true},
-  cars: {unit:()=>"천대",                 label:"입차", money:false},
+  cars: {unit:()=>"대",                  label:"입차", money:false},
   ppc:  {unit:()=>UNITS[moneyUnit].label,label:"입차단가", money:true}
 };
 function metricVal(r, mk){
@@ -747,13 +751,10 @@ function metricVal(r, mk){
   if(mk==="ppc") return (r.sales!=null && r.cars) ? r.sales/r.cars : null;
   return r[mk]!=null ? r[mk] : null;
 }
-/* 입차: 천대·소수1자리 표기 (계산은 원래 대수 그대로) */
-function carsFmt(v){ return v==null?"—":(v/1000).toLocaleString("ko-KR",{minimumFractionDigits:1,maximumFractionDigits:1}); }
 function metricFmt(v, mk){
   mk = mk||metric;
   if(v==null) return "—";
   if(mk==="ppc") return Math.round(v/1000).toLocaleString("ko-KR");  // 입차단가는 천원
-  if(mk==="cars") return carsFmt(v);                                 // 입차는 천대
   return METRIC[mk].money ? money(v) : fmt(v);
 }
 function unitOf(mk){ mk=mk||metric; return mk==="ppc" ? "천원" : METRIC[mk].unit(); }
@@ -846,21 +847,31 @@ function tableGap(){
 }
 
 /* ---------- 자체 다이얼로그 ---------- */
-function dialog({title,msg="",input=null,okText="확인",danger=false}){
+function dialog({title,msg="",input=null,okText="확인",danger=false,ym=null}){
   return new Promise(res=>{
     $("dlgTitle").textContent=title;
     $("dlgMsg").textContent=msg; $("dlgMsg").style.display=msg?"block":"none";
     const inp=$("dlgInput");
-    inp.style.display = input!=null?"block":"none"; inp.value=input||"";
+    inp.style.display = (input!=null&&!ym)?"block":"none"; inp.value=input||"";
+    const ymBox=$("dlgYM");
+    if(ym){
+      const yNow=(new Date()).getFullYear();
+      $("dlgYear").innerHTML=""; $("dlgMonth").innerHTML="";
+      for(let y=yNow+1; y>=yNow-6; y--){ const o=document.createElement("option"); o.value=y; o.textContent=y+"년"; $("dlgYear").appendChild(o); }
+      for(let m=1; m<=12; m++){ const o=document.createElement("option"); o.value=m; o.textContent=m+"월"; $("dlgMonth").appendChild(o); }
+      $("dlgYear").value=ym.year; $("dlgMonth").value=ym.month;
+      ymBox.style.display="flex";
+    } else ymBox.style.display="none";
     $("dlgOk").textContent=okText; $("dlgOk").className = danger?"danger":"prim";
     $("dlgWrap").classList.add("on");
-    if(input!=null) setTimeout(()=>inp.focus(),50);
-    const done=v=>{ $("dlgWrap").classList.remove("on"); $("dlgOk").onclick=$("dlgCancel").onclick=null; inp.onkeydown=null; res(v); };
-    $("dlgOk").onclick=()=>done(input!=null?(inp.value.trim()||null):true);
-    $("dlgCancel").onclick=()=>done(input!=null?null:false);
+    if(input!=null&&!ym) setTimeout(()=>inp.focus(),50);
+    const done=v=>{ $("dlgWrap").classList.remove("on"); $("dlgOk").onclick=$("dlgCancel").onclick=null; inp.onkeydown=null; ymBox.style.display="none"; res(v); };
+    $("dlgOk").onclick=()=>{ if(ym) return done({year:+$("dlgYear").value, month:+$("dlgMonth").value}); done(input!=null?(inp.value.trim()||null):true); };
+    $("dlgCancel").onclick=()=>done(null);
     inp.onkeydown=e=>{ if(e.key==="Enter") $("dlgOk").click(); };
   });
 }
+const askYearMonth=(title, def)=>dialog({title, ym:def||{year:(new Date()).getFullYear(), month:(new Date()).getMonth()+1}, okText:"만들기"});
 const askText=(t,d)=>dialog({title:t,input:d||""});
 const askOk=(t,m,ok="확인")=>dialog({title:t,msg:m,okText:ok,danger:true});
 
@@ -1225,7 +1236,7 @@ function renderMTD(){
 
   $("mtd").innerHTML=cards.map(c=>{
     const cur=valOf(S,c.k), cmp=valOf(C,c.k);
-    const u = c.k==="ppc"?"천원" : (c.money?moneyU():"천대");
+    const u = c.k==="ppc"?"천원" : (c.money?moneyU():"대");
     const ach=(c.k==="sales"&&cur!=null&&tgt)?`<div class="ach">목표 대비 <b>${(cur/tgt*100).toFixed(1)}%</b></div>`:"";
     const f = v=>metricFmt(v,c.k);
     return `<div class="sum"><div class="lab">${c.lab}</div>
@@ -1314,7 +1325,7 @@ function dayCard(d){
   if(!r) inner+=`<div class="empty">실적 없음 · 눌러서 입력</div>`;
   else{
     inner+=metricLine("매출",r.sales,c?c.sales:null,moneyU(),true);
-    inner+=metricLine("입차",r.cars,c?c.cars:null,"천대",false,carsFmt);
+    inner+=metricLine("입차",r.cars,c?c.cars:null,"대",false);
     inner+=ppcLine(metricVal(r,"ppc"),metricVal(c,"ppc"));
     if(r.target_sales) inner+=`<div class="ach">매출 달성 <b>${(r.sales/r.target_sales*100).toFixed(1)}%</b></div>`;
     if(r.note) inner+=`<div class="notepill" data-note="${key}">✎ ${esc(r.note)}</div>`;
@@ -1347,13 +1358,13 @@ function periodTable(title, periods){
     return `<tr><td>${pr.label}</td>
       <td class="num">${money(s.cur)}<span class="sm">대비 ${money(s.cmp)}</span></td>
       ${rateTd(growth(s.cur,s.cmp))}
-      <td class="num">${carsFmt(c.cur)}<span class="sm">대비 ${carsFmt(c.cmp)}</span></td>
+      <td class="num">${fmt(c.cur)}<span class="sm">대비 ${fmt(c.cmp)}</span></td>
       ${rateTd(growth(c.cur,c.cmp))}
       <td class="num">${kwon(pcur)}<span class="sm">대비 ${kwon(pcmp)}</span></td>
       ${rateTd(growth(pcur,pcmp))}</tr>`;
   }).join("");
   $("view").innerHTML=`<div class="tblwrap"><table class="agg"><thead><tr>
-    <th>${title}</th><th>매출(${moneyU()})</th><th>신장</th><th>입차(천대)</th><th>신장</th><th>입차단가(천원)</th><th>신장</th>
+    <th>${title}</th><th>매출(${moneyU()})</th><th>신장</th><th>입차</th><th>신장</th><th>입차단가(천원)</th><th>신장</th>
   </tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 function renderMonth(){
@@ -1443,7 +1454,7 @@ function openDay(key){
       <span>신장률</span>
     </div>
     ${cmpRow("매출", r?r.sales:null, c?c.sales:null, moneyU(), true)}
-    ${cmpRow("입차", r?r.cars:null, c?c.cars:null, "천대", false, carsFmt)}
+    ${cmpRow("입차", r?r.cars:null, c?c.cars:null, "대", false)}
     ${cmpRow("입차단가", metricVal(r,"ppc"), metricVal(c,"ppc"), "천원", false, v=>v==null?"—":Math.round(v/1000).toLocaleString("ko-KR"))}
     <div class="crow"><div class="lab">날씨</div>${wxCell(w)}${wxCell(cw)}<div></div></div>
     <div class="goal">${goals}</div>
@@ -1528,14 +1539,17 @@ function renderProfiles(){
   $("profList").querySelectorAll("[data-edit]").forEach(b=>b.onclick=()=>openProfileEdit(b.dataset.edit));
 }
 $("btnNewProfile").onclick=async()=>{
-  const name=await askText("프로파일 이름",`${cursor.getFullYear()} 대비일`);
-  if(!name) return;
+  const ym=await askYearMonth("대비일 프로파일 만들기", {year:cursor.getFullYear(), month:cursor.getMonth()+1});
+  if(!ym) return;
+  const name=`${ym.year}년 ${ym.month}월 대비`;
   spin(true);
   const {data,error}=await sb.from("compare_profiles").insert({name}).select().single();
   if(error){ spin(false); return say($("msgCmp"),"만들지 못했습니다. "+error.message); }
   profiles.push(data); activeId=data.id;
   await putSetting("compare",{profileId:activeId}); await loadMappings();
-  spin(false); syncCmpLabel(); renderProfiles(); openProfileEdit(data.id); loadView();
+  /* 만든 연·월로 커서를 옮겨 그 달 편집 화면이 바로 보이게 */
+  cursor=new Date(ym.year, ym.month-1, 1);
+  spin(false); syncControls(); syncCmpLabel(); renderProfiles(); openProfileEdit(data.id); loadView();
 };
 async function openProfileEdit(id){
   editId=id;
@@ -1552,7 +1566,7 @@ function renderMapRows(){
   const [first,last]=monthBounds(cursor);
   $("peMonthLabel").textContent=`${cursor.getFullYear()}.${pad(cursor.getMonth()+1)} 일자별 대비일`;
   $("peMap").innerHTML=daysOf(first,last).map(d=>{
-    const k=iso(d), set=editMappings.get(k), auto=iso(autoCompare(d));
+    const k=iso(d), set=editMappings.get(k), auto=iso(sameDate(d));  // 기본값: 전년 동월 같은 날짜
     return `<div class="maprow"><div class="d">${d.getDate()}일<small> (${WD[d.getDay()]})</small></div>
       <input type="date" data-k="${k}" value="${set||auto}" class="${set?"":"autoval"}">
       <button data-clr="${k}" ${set?"":'disabled style="opacity:.3"'}>↺</button></div>`;
@@ -1684,14 +1698,16 @@ function rgCheck(){
 }
 $("btnRange").onclick=()=>{
   const [f,l]=monthBounds(cursor);
-  if(!$("rgAs").value){ dateFields.rgAs.set(iso(f)); dateFields.rgAe.set(iso(l)); }
+  dateFields.rgAs.set(iso(f)); dateFields.rgAe.set(iso(l));
+  dateFields.rgBs.set(iso(sameDate(f))); dateFields.rgBe.set(iso(sameDate(l)));
+  rgCheck();
   openSheet("sheetRange");
 };
 $("rgAuto").onclick=()=>{
   const a=$("rgAs").value,b=$("rgAe").value;
   if(!a||!b) return;
-  dateFields.rgBs.set(iso(resolveCompare(parseISO(a))));
-  dateFields.rgBe.set(iso(resolveCompare(parseISO(b))));
+  dateFields.rgBs.set(iso(sameDate(parseISO(a))));
+  dateFields.rgBe.set(iso(sameDate(parseISO(b))));
   rgCheck();
 };
 function rangeAgg(rows,from,to){
@@ -1736,7 +1752,7 @@ $("rgRun").onclick=async()=>{
       <span>신장률</span>
     </div>
     ${cmpRow("매출", A.sales, B.sales, moneyU(), true)}
-    ${cmpRow("입차", A.cars, B.cars, "천대", false, carsFmt)}
+    ${cmpRow("입차", A.cars, B.cars, "대", false)}
     ${cmpRow("입차단가", (A.sales!=null&&A.cars)?A.sales/A.cars:null, (B.sales!=null&&B.cars)?B.sales/B.cars:null, "천원", false, v=>v==null?"—":Math.round(v/1000).toLocaleString("ko-KR"))}
     <div class="goal">${goals}</div>
   </div>
