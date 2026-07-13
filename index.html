@@ -436,28 +436,15 @@ create policy "read" on weather_cache for select using (true);
 create policy "ins"  on weather_cache for insert to authenticated with check (true);
 create policy "upd"  on weather_cache for update to authenticated using (true) with check (true);
 
--- 4. 대비일 프로파일
-create table compare_profiles (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null default auth.uid() references auth.users,
-  name text not null,
-  offset_days integer,
-  created_at timestamptz default now()
-);
-alter table compare_profiles enable row level security;
-create policy "own" on compare_profiles for all
-  using (auth.uid() = user_id) with check (auth.uid() = user_id);
-
--- 5. 일자별 대비일 매핑
-create table compare_mappings (
-  profile_id uuid not null references compare_profiles(id) on delete cascade,
+-- 4. 대비일 지정 (월별 대비일을 날짜별로 저장)
+create table compare_days (
   user_id uuid not null default auth.uid() references auth.users,
   base_date date not null,
   compare_date date not null,
-  primary key (profile_id, base_date)
+  primary key (user_id, base_date)
 );
-alter table compare_mappings enable row level security;
-create policy "own" on compare_mappings for all
+alter table compare_days enable row level security;
+create policy "own" on compare_days for all
   using (auth.uid() = user_id) with check (auth.uid() = user_id);</pre>
       <p style="margin-top:8px">Authentication → Providers → Email 에서 <b>Allow new users to sign up</b> 을 끄고, 본인 계정 하나만 남기세요.</p>
     </details>
@@ -592,29 +579,21 @@ create policy "own" on compare_mappings for all
 
 <div class="sheet" id="sheetCmp">
   <h2>대비일 설정</h2>
-  <div class="cmpline">프로파일을 고르면 그 안의 일자별 지정값이 우선 적용됩니다. 비어 있는 날은 오프셋, 그다음 자동 규칙으로 채워집니다.</div>
-  <div id="profList" style="margin-top:12px"></div>
-  <button class="btn ghost" id="btnNewProfile">새 프로파일 만들기</button>
-  <div id="profEdit" style="display:none;margin-top:20px;border-top:1px solid var(--rule);padding-top:16px">
-    <div style="display:flex;align-items:center;gap:8px;justify-content:space-between">
-      <h2 id="peName" style="margin:0">—</h2>
-      <button class="btn ghost" id="peRename" style="margin:0;width:auto;padding:6px 12px;font-size:12px;flex:none">이름 수정</button>
-    </div>
-    <div class="field"><label>오프셋 (일수, 비워두면 자동 규칙)</label><input id="peOffset" type="number" placeholder="예: -364"></div>
-    <div class="row-btns">
-      <button class="btn ghost" id="peAutoFill" style="margin:0">이 달 자동 채우기</button>
-      <button class="btn ghost" id="peClear" style="margin:0">이 달 지정 지우기</button>
-    </div>
-    <div style="font-size:11px;color:var(--ink-3);margin-top:18px;font-weight:650" id="peMonthLabel">—</div>
-    <div id="peMap" style="margin-top:4px"></div>
-    <div class="row-btns">
-      <button class="btn ghost" id="peExport" style="margin:0">Excel 내보내기</button>
-      <button class="btn ghost" id="peImport" style="margin:0">Excel 가져오기</button>
-    </div>
-    <input type="file" id="fileProf" accept=".xlsx,.xls,.csv" hidden>
-    <button class="btn danger" id="peDelete">이 프로파일 삭제</button>
+  <div class="cmpline">월을 넘기며 각 날짜의 대비일을 지정합니다. 지정한 날은 그 값이, 비운 날은 대비 드롭다운의 규칙(동요일/동일자)이 적용됩니다. 지정은 월이 달라도 모두 함께 동작합니다.</div>
+  <div class="month" style="justify-content:center;margin-top:14px">
+    <button class="nav" id="cmpPrev">‹</button>
+    <div class="mo num" id="cmpMonthLabel" style="min-width:120px;text-align:center">—</div>
+    <button class="nav" id="cmpNext">›</button>
   </div>
+  <div class="row-btns" style="margin-top:12px">
+    <button class="btn ghost" id="peAutoFill" style="margin:0">이 달 전년동월로 채우기</button>
+    <button class="btn ghost" id="peClear" style="margin:0">이 달 지정 지우기</button>
+  </div>
+  <div id="peMap" style="margin-top:14px"></div>
   <div class="msg" id="msgCmp"></div>
+</div>
+<div class="_oldcmp" style="display:none">
+
 </div>
 
 <div class="sheet" id="sheetRegion">
@@ -730,7 +709,7 @@ const DEFAULT_REGION={name:"여주",lat:37.298,lon:127.637};
 
 let sb=null, cursor=new Date(), view="cal", metric="sales", moneyUnit="mn", sheetUrl="", cmpMode="weekday";
 let store=new Map(), wx=new Map(), region=DEFAULT_REGION;
-let profiles=[], activeId=null, mappings=new Map(), editId=null, editMappings=new Map();
+let mappings=new Map(), cmpCursor=new Date();  // cmpCursor: 대비일 설정에서 보고 있는 월
 let editing=null, entCursor=new Date();
 
 /* 매출은 항상 원 단위로 저장한다. 아래는 표기 배율만 정의. */
@@ -917,29 +896,22 @@ function autoCompare(d){
   const back=(c-t+7)%7, fwd=(t-c+7)%7;
   return back<=fwd?addDays(base,-back):addDays(base,fwd);
 }
-const activeProfile=()=>profiles.find(p=>p.id===activeId)||null;
 function sameDate(d){ return new Date(d.getFullYear()-1, d.getMonth(), d.getDate()); }
+/* 대비일 모드: 날짜별 지정(mappings)이 있으면 그것, 없으면 동요일 규칙.
+   지정은 월 구분 없이 전역 하나로 동작한다. */
 function resolveCompare(d){
   if(cmpMode==="date") return sameDate(d);
   if(cmpMode==="weekday") return autoCompare(d);
-  const k=iso(d), p=activeProfile();
-  if(p){
-    if(mappings.has(k)) return parseISO(mappings.get(k));
-    if(p.offset_days!=null) return addDays(d,p.offset_days);
-  }
+  const k=iso(d);
+  if(mappings.has(k)) return parseISO(mappings.get(k));
   return autoCompare(d);
 }
 function compareSource(d){
-  const p=activeProfile();
-  if(p&&mappings.has(iso(d))) return "지정";
-  if(p&&p.offset_days!=null) return "오프셋";
-  return "자동";
+  return mappings.has(iso(d)) ? "지정" : "자동";
 }
 function syncCmpLabel(){
-  const p=activeProfile();
-  $("btnCmpSub").textContent = p ? `${p.name}${p.offset_days!=null?` · 오프셋 ${p.offset_days}일`:""}`
-                                 : "자동 규칙 · 365일 전 가장 가까운 같은 요일";
-  $("btnCmp").style.color = p ? "var(--accent)" : "";
+  const n=mappings.size;
+  $("btnCmpSub").textContent = n ? `${n}일 지정됨 · 나머지는 규칙` : "지정한 날은 그 값, 나머지는 규칙";
 }
 
 const growth=(a,b)=>(a==null||b==null||b===0)?null:(a-b)/b*100;
@@ -1080,7 +1052,6 @@ async function loadSettings(){
     const {data}=await sb.from("app_settings").select("key,value");
     (data||[]).forEach(r=>{
       if(r.key==="region"&&r.value) region=r.value;
-      if(r.key==="compare"&&r.value) activeId=r.value.profileId||null;
       if(r.key==="display"&&r.value){ if(r.value.moneyUnit) moneyUnit=r.value.moneyUnit; if(r.value.sheetUrl) sheetUrl=r.value.sheetUrl; }
     });
   }catch(e){}
@@ -1088,32 +1059,14 @@ async function loadSettings(){
   syncControls();
   if($("inSheet")) $("inSheet").value=sheetUrl||"";
 }
-async function loadProfiles(){
-  try{
-    const {data}=await sb.from("compare_profiles").select("id,name,offset_days").order("created_at");
-    profiles=data||[];
-  }catch(e){ profiles=[]; }
-  if(activeId&&!profiles.some(p=>p.id===activeId)) activeId=null;
-  await loadMappings();
-  syncCmpLabel();
-}
-async function loadMappings(){
+/* 대비일 지정을 전부 불러온다 (프로파일 없음, 전역 하나) */
+async function loadCompareDays(){
   mappings=new Map();
-  if(!activeId) return;
   try{
-    const {data}=await sb.from("compare_mappings").select("base_date,compare_date").eq("profile_id",activeId);
+    const {data}=await sb.from("compare_days").select("base_date,compare_date");
     (data||[]).forEach(r=>mappings.set(r.base_date,r.compare_date));
   }catch(e){}
-}
-async function ensureProfile(){
-  let p=activeProfile();
-  if(p) return p;
-  const {data,error}=await sb.from("compare_profiles").insert({name:`${cursor.getFullYear()} 대비일`}).select().single();
-  if(error) throw error;
-  profiles.push(data); activeId=data.id; mappings=new Map();
-  await putSetting("compare",{profileId:activeId});
   syncCmpLabel();
-  return data;
 }
 
 /* ---------- 데이터 로드 ---------- */
@@ -1467,9 +1420,7 @@ function openDay(key){
   </div>`;
 
   setDate("fCmpDate",ck);
-  $("cmpHint").textContent = activeProfile()
-    ? `바꾸면 "${activeProfile().name}" 프로파일에 저장됩니다. 비우면 자동 규칙으로 돌아갑니다.`
-    : "바꾸면 대비일 프로파일이 자동으로 만들어집니다.";
+  $("cmpHint").textContent = "바꾸면 이 날짜의 대비일로 저장됩니다. 비우면 규칙(동요일/동일자)으로 돌아갑니다.";
   const hc=$("hdrCmp");
   if(hc) hc.onclick=()=>{ $("fCmpDateT").scrollIntoView({block:"center",behavior:"smooth"}); $("fCmpDateT").focus(); };
 
@@ -1483,16 +1434,15 @@ function openDay(key){
 async function applyCmpDate(){
   const v=$("fCmpDate").value;
   try{
-    if(!v||v===iso(autoCompare(parseISO(editing)))){
-      if(activeProfile()){
-        await sb.from("compare_mappings").delete().eq("profile_id",activeId).eq("base_date",editing);
-        mappings.delete(editing);
-      }
+    if(!v || v===iso(autoCompare(parseISO(editing)))){
+      /* 비우거나 규칙값과 같으면 지정 해제 */
+      await sb.from("compare_days").delete().eq("base_date",editing);
+      mappings.delete(editing);
     }else{
-      const p=await ensureProfile();
-      await sb.from("compare_mappings").upsert({profile_id:p.id,base_date:editing,compare_date:v},{onConflict:"profile_id,base_date"});
+      await sb.from("compare_days").upsert({base_date:editing,compare_date:v},{onConflict:"user_id,base_date"});
       mappings.set(editing,v);
     }
+    syncCmpLabel();
     await loadView(); openDay(editing);
   }catch(e){ say($("msgDay"),"대비일을 저장하지 못했습니다. "+e.message); }
 }
@@ -1522,142 +1472,55 @@ $("btnDel").onclick=async()=>{
 };
 
 /* ---------- 대비일 프로파일 ---------- */
-$("btnCmp").onclick=()=>{ clear($("msgCmp")); renderProfiles(); $("profEdit").style.display="none"; closeSheets(); openSheet("sheetCmp"); };
-function renderProfiles(){
-  const rows=[`<div class="prow"><div class="nm">자동 규칙만 사용<small>365일 전 가장 가까운 같은 요일</small></div>
-    <button class="${!activeId?"on":""}" data-act="">${!activeId?"사용 중":"사용"}</button></div>`];
-  profiles.forEach(p=>rows.push(`<div class="prow">
-    <div class="nm">${esc(p.name)}<small>${p.offset_days!=null?`오프셋 ${p.offset_days}일`:"오프셋 없음"}</small></div>
-    <button class="${activeId===p.id?"on":""}" data-act="${p.id}">${activeId===p.id?"사용 중":"사용"}</button>
-    <button data-edit="${p.id}">편집</button></div>`));
-  $("profList").innerHTML=rows.join("");
-  $("profList").querySelectorAll("[data-act]").forEach(b=>b.onclick=async()=>{
-    activeId=b.dataset.act||null;
-    spin(true); await putSetting("compare",{profileId:activeId}); await loadMappings(); spin(false);
-    syncCmpLabel(); renderProfiles(); loadView();
-  });
-  $("profList").querySelectorAll("[data-edit]").forEach(b=>b.onclick=()=>openProfileEdit(b.dataset.edit));
-}
-$("btnNewProfile").onclick=async()=>{
-  const ym=await askYearMonth("대비일 프로파일 만들기", {year:cursor.getFullYear(), month:cursor.getMonth()+1});
-  if(!ym) return;
-  const name=`${ym.year}년 ${ym.month}월 대비`;
-  spin(true);
-  const {data,error}=await sb.from("compare_profiles").insert({name}).select().single();
-  if(error){ spin(false); return say($("msgCmp"),"만들지 못했습니다. "+error.message); }
-  profiles.push(data); activeId=data.id;
-  await putSetting("compare",{profileId:activeId}); await loadMappings();
-  /* 만든 연·월로 커서를 옮겨 그 달 편집 화면이 바로 보이게 */
-  cursor=new Date(ym.year, ym.month-1, 1);
-  spin(false); syncControls(); syncCmpLabel(); renderProfiles(); openProfileEdit(data.id); loadView();
-};
-async function openProfileEdit(id){
-  editId=id;
-  const p=profiles.find(x=>x.id===id);
-  $("peName").textContent=p.name;
-  $("peOffset").value=p.offset_days!=null?p.offset_days:"";
-  $("profEdit").style.display="block";
-  spin(true);
-  const {data}=await sb.from("compare_mappings").select("base_date,compare_date").eq("profile_id",id);
-  editMappings=new Map((data||[]).map(r=>[r.base_date,r.compare_date]));
-  spin(false); renderMapRows();
-}
-function renderMapRows(){
-  const [first,last]=monthBounds(cursor);
-  $("peMonthLabel").textContent=`${cursor.getFullYear()}.${pad(cursor.getMonth()+1)} 일자별 대비일`;
+/* ---------- 대비일 설정 (월별 편집, 프로파일 없음) ---------- */
+$("btnCmp").onclick=()=>{ clear($("msgCmp")); cmpCursor=new Date(cursor.getFullYear(), cursor.getMonth(), 1); renderCmpMonth(); closeSheets(); openSheet("sheetCmp"); };
+$("cmpPrev").onclick=()=>{ cmpCursor=new Date(cmpCursor.getFullYear(), cmpCursor.getMonth()-1, 1); renderCmpMonth(); };
+$("cmpNext").onclick=()=>{ cmpCursor=new Date(cmpCursor.getFullYear(), cmpCursor.getMonth()+1, 1); renderCmpMonth(); };
+
+function renderCmpMonth(){
+  $("cmpMonthLabel").textContent=`${cmpCursor.getFullYear()}.${pad(cmpCursor.getMonth()+1)}`;
+  const [first,last]=monthBounds(cmpCursor);
   $("peMap").innerHTML=daysOf(first,last).map(d=>{
-    const k=iso(d), set=editMappings.get(k), auto=iso(sameDate(d));  // 기본값: 전년 동월 같은 날짜
+    const k=iso(d), set=mappings.get(k), auto=iso(sameDate(d));  // 기본 표시값: 전년 동월 같은 날짜
     return `<div class="maprow"><div class="d">${d.getDate()}일<small> (${WD[d.getDay()]})</small></div>
       <input type="date" data-k="${k}" value="${set||auto}" class="${set?"":"autoval"}">
       <button data-clr="${k}" ${set?"":'disabled style="opacity:.3"'}>↺</button></div>`;
   }).join("");
   $("peMap").querySelectorAll("input[data-k]").forEach(el=>el.onchange=async()=>{
-    await sb.from("compare_mappings").upsert({profile_id:editId,base_date:el.dataset.k,compare_date:el.value},{onConflict:"profile_id,base_date"});
-    editMappings.set(el.dataset.k,el.value); el.classList.remove("autoval");
-    if(editId===activeId){ mappings.set(el.dataset.k,el.value); loadView(); }
+    try{
+      await sb.from("compare_days").upsert({base_date:el.dataset.k,compare_date:el.value},{onConflict:"user_id,base_date"});
+      mappings.set(el.dataset.k,el.value); el.classList.remove("autoval");
+      syncCmpLabel(); loadView();
+      const btn=$("peMap").querySelector(`[data-clr="${el.dataset.k}"]`);
+      if(btn){ btn.disabled=false; btn.style.opacity=""; }
+    }catch(e){ say($("msgCmp"),"저장하지 못했습니다. "+e.message); }
   });
   $("peMap").querySelectorAll("[data-clr]").forEach(b=>b.onclick=async()=>{
-    await sb.from("compare_mappings").delete().eq("profile_id",editId).eq("base_date",b.dataset.clr);
-    editMappings.delete(b.dataset.clr);
-    if(editId===activeId){ mappings.delete(b.dataset.clr); loadView(); }
-    renderMapRows();
+    try{
+      await sb.from("compare_days").delete().eq("base_date",b.dataset.clr);
+      mappings.delete(b.dataset.clr); syncCmpLabel(); loadView(); renderCmpMonth();
+    }catch(e){ say($("msgCmp"),"지우지 못했습니다. "+e.message); }
   });
 }
-$("peOffset").onchange=async()=>{
-  const v=$("peOffset").value===""?null:Math.round(+$("peOffset").value);
-  spin(true);
-  const {error}=await sb.from("compare_profiles").update({offset_days:v}).eq("id",editId);
-  spin(false);
-  if(error) return say($("msgCmp"),"저장하지 못했습니다. "+error.message);
-  profiles.find(p=>p.id===editId).offset_days=v;
-  syncCmpLabel(); renderProfiles(); loadView();
-};
 $("peAutoFill").onclick=async()=>{
-  const [f,l]=monthBounds(cursor);
-  const list=daysOf(f,l).map(d=>({profile_id:editId,base_date:iso(d),compare_date:iso(autoCompare(d))}));
+  const [f,l]=monthBounds(cmpCursor);
+  const list=daysOf(f,l).map(d=>({base_date:iso(d),compare_date:iso(sameDate(d))}));
   spin(true);
-  const {error}=await sb.from("compare_mappings").upsert(list,{onConflict:"profile_id,base_date"});
+  const {error}=await sb.from("compare_days").upsert(list,{onConflict:"user_id,base_date"});
   spin(false);
   if(error) return say($("msgCmp"),"채우지 못했습니다. "+error.message);
-  list.forEach(r=>editMappings.set(r.base_date,r.compare_date));
-  if(editId===activeId) await loadMappings();
-  renderMapRows(); loadView();
-  say($("msgCmp"),`${list.length}일을 자동 규칙으로 채웠습니다. 이제 개별 수정할 수 있습니다.`,"ok");
+  list.forEach(r=>mappings.set(r.base_date,r.compare_date));
+  syncCmpLabel(); renderCmpMonth(); loadView();
+  say($("msgCmp"),`${list.length}일을 전년 동월로 채웠습니다. 개별 수정도 가능합니다.`,"ok");
 };
 $("peClear").onclick=async()=>{
-  const [f,l]=monthBounds(cursor);
-  if(!await askOk("지정 대비일 지우기",`${cursor.getMonth()+1}월에 직접 지정한 대비일을 모두 지웁니다.`,"지우기")) return;
+  const [f,l]=monthBounds(cmpCursor);
+  if(!await askOk("이 달 지정 지우기",`${cmpCursor.getMonth()+1}월에 지정한 대비일을 모두 지웁니다. 규칙으로 돌아갑니다.`,"지우기")) return;
   spin(true);
-  await sb.from("compare_mappings").delete().eq("profile_id",editId).gte("base_date",iso(f)).lte("base_date",iso(l));
+  await sb.from("compare_days").delete().gte("base_date",iso(f)).lte("base_date",iso(l));
   spin(false);
-  daysOf(f,l).forEach(d=>editMappings.delete(iso(d)));
-  if(editId===activeId) await loadMappings();
-  renderMapRows(); loadView();
-};
-$("peRename").onclick=async()=>{
-  const cur=profiles.find(x=>x.id===editId);
-  const name=await askText("프로파일 이름", cur?cur.name:"");
-  if(!name || !cur || name===cur.name) return;
-  spin(true);
-  const {error}=await sb.from("compare_profiles").update({name}).eq("id",editId);
-  spin(false);
-  if(error) return say($("msgCmp"),"이름을 바꾸지 못했습니다. "+error.message);
-  cur.name=name; $("peName").textContent=name;
-  syncCmpLabel(); renderProfiles();
-};
-$("peDelete").onclick=async()=>{
-  if(!await askOk("프로파일 삭제","이 프로파일과 안의 모든 대비일 지정을 삭제합니다.","삭제")) return;
-  spin(true);
-  await sb.from("compare_profiles").delete().eq("id",editId);
-  if(activeId===editId){ activeId=null; await putSetting("compare",{profileId:null}); }
-  await loadProfiles(); spin(false);
-  $("profEdit").style.display="none"; renderProfiles(); loadView();
-};
-$("peExport").onclick=()=>{
-  const list=[...editMappings].map(([base_date,compare_date])=>({base_date,compare_date}));
-  if(!list.length) return say($("msgCmp"),"내보낼 지정값이 없습니다.");
-  const ws=XLSX.utils.json_to_sheet(list), wb=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb,ws,"mappings");
-  XLSX.writeFile(wb,`대비일_${$("peName").textContent}.xlsx`);
-};
-$("peImport").onclick=()=>$("fileProf").click();
-$("fileProf").onchange=async e=>{
-  const f=e.target.files[0]; if(!f) return; e.target.value="";
-  try{
-    const wb=XLSX.read(await f.arrayBuffer(),{cellDates:true});
-    const raw=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:null});
-    const list=raw.map(r=>({profile_id:editId,base_date:normDate(r.base_date),compare_date:normDate(r.compare_date)}))
-      .filter(r=>r.base_date&&r.compare_date);
-    if(!list.length) return say($("msgCmp"),"base_date, compare_date 열을 찾지 못했습니다.");
-    spin(true);
-    const {error}=await sb.from("compare_mappings").upsert(list,{onConflict:"profile_id,base_date"});
-    spin(false);
-    if(error) return say($("msgCmp"),"가져오지 못했습니다. "+error.message);
-    list.forEach(r=>editMappings.set(r.base_date,r.compare_date));
-    if(editId===activeId) await loadMappings();
-    renderMapRows(); loadView();
-    say($("msgCmp"),`${list.length}건 가져왔습니다.`,"ok");
-  }catch(err){ spin(false); say($("msgCmp"),"파일을 읽지 못했습니다. "+err.message); }
+  daysOf(f,l).forEach(d=>mappings.delete(iso(d)));
+  syncCmpLabel(); renderCmpMonth(); loadView();
 };
 
 /* ---------- 지역 ---------- */
@@ -1769,7 +1632,7 @@ function renderEntry(){
   $("entRows").innerHTML=daysOf(f,l).map(d=>{
     const k=iso(d), r=store.get(k), wd=d.getDay(), hd=dayCls(k,d);
     const cls=["entrow", hd?"wknd":"", k===todayISO?"tdy":""].join(" ");
-    const cd=resolveCompare(d), setv=activeProfile()&&mappings.has(k);
+    const cd=resolveCompare(d), setv=mappings.has(k);
     return `<div class="${cls}">
       <div class="dd">${d.getDate()}<small>${WD[wd]}</small><i class="${setv?"set":""}">${cd.getMonth()+1}.${cd.getDate()}</i></div>
       <input type="number" inputmode="numeric" data-k="${k}" data-f="sales"        value="${r&&r.sales!=null?r.sales:""}">
@@ -1848,22 +1711,20 @@ $("entCmpApply").onclick=async()=>{
   if(!await askOk("대비 기간 일괄 지정",`${entCursor.getMonth()+1}월 전체의 대비일을 ${iso(a)} ~ ${iso(b)} 로 지정합니다.${warn}`,"적용")) return;
   spin(true);
   try{
-    const p=await ensureProfile();
-    const list=daysOf(f,l).map(d=>({profile_id:p.id,base_date:iso(d),compare_date:iso(addDays(d,off))}));
-    const {error}=await sb.from("compare_mappings").upsert(list,{onConflict:"profile_id,base_date"});
+    const list=daysOf(f,l).map(d=>({base_date:iso(d),compare_date:iso(addDays(d,off))}));
+    const {error}=await sb.from("compare_days").upsert(list,{onConflict:"user_id,base_date"});
     if(error) throw error;
     list.forEach(r=>mappings.set(r.base_date,r.compare_date));
-    spin(false); renderEntry(); loadView();
+    syncCmpLabel(); spin(false); renderEntry(); loadView();
   }catch(e){ spin(false); say($("msgData"),"지정하지 못했습니다. "+e.message,"err"); }
 };
 $("entCmpAuto").onclick=async()=>{
-  if(!activeProfile()) return;
   const [f,l]=monthBounds(entCursor);
-  if(!await askOk("자동 규칙으로 되돌리기",`${entCursor.getMonth()+1}월에 지정한 대비일을 모두 지웁니다.`,"되돌리기")) return;
+  if(!await askOk("규칙으로 되돌리기",`${entCursor.getMonth()+1}월에 지정한 대비일을 모두 지웁니다.`,"되돌리기")) return;
   spin(true);
-  await sb.from("compare_mappings").delete().eq("profile_id",activeId).gte("base_date",iso(f)).lte("base_date",iso(l));
+  await sb.from("compare_days").delete().gte("base_date",iso(f)).lte("base_date",iso(l));
   daysOf(f,l).forEach(d=>mappings.delete(iso(d)));
-  setDate("entCmpStart",""); spin(false);
+  setDate("entCmpStart",""); syncCmpLabel(); spin(false);
   renderEntry(); loadView();
 };
 
@@ -2017,9 +1878,9 @@ $("miBackup").onclick=async()=>{
   spin(true);
   try{
     const d=await fetchAll();
-    const {data:mp}=await sb.from("compare_mappings").select("profile_id,base_date,compare_date");
+    const {data:cd}=await sb.from("compare_days").select("base_date,compare_date");
     download(`매출캘린더_백업_${todayISO}.json`, new Blob([JSON.stringify(
-      {version:3,unit:"million_krw",region,profiles,compare_mappings:mp||[],daily_metrics:d,exported_at:new Date().toISOString()},null,2)],
+      {version:4,unit:"won",region,compare_days:cd||[],daily_metrics:d,exported_at:new Date().toISOString()},null,2)],
       {type:"application/json"}));
     say($("msgData"),`${d.length}건 백업했습니다.`,"ok");
   }catch(e){ say($("msgData"),"백업하지 못했습니다. "+e.message,"err"); }
@@ -2075,7 +1936,7 @@ $("btnToday").onclick=()=>{cursor=new Date();loadView()};
 /* ---------- 부팅 ---------- */
 async function enterApp(){
   show("scApp"); cursor=new Date();
-  await loadSettings(); await loadProfiles(); loadView();
+  await loadSettings(); await loadCompareDays(); loadView();
 }
 (async function(){
   const cfg=readCfg();
