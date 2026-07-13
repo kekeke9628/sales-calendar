@@ -592,7 +592,10 @@ create policy "own" on compare_mappings for all
   <div id="profList" style="margin-top:12px"></div>
   <button class="btn ghost" id="btnNewProfile">새 프로파일 만들기</button>
   <div id="profEdit" style="display:none;margin-top:20px;border-top:1px solid var(--rule);padding-top:16px">
-    <h2 id="peName">—</h2>
+    <div style="display:flex;align-items:center;gap:8px;justify-content:space-between">
+      <h2 id="peName" style="margin:0">—</h2>
+      <button class="btn ghost" id="peRename" style="margin:0;width:auto;padding:6px 12px;font-size:12px;flex:none">이름 수정</button>
+    </div>
     <div class="field"><label>오프셋 (일수, 비워두면 자동 규칙)</label><input id="peOffset" type="number" placeholder="예: -364"></div>
     <div class="row-btns">
       <button class="btn ghost" id="peAutoFill" style="margin:0">이 달 자동 채우기</button>
@@ -735,7 +738,7 @@ const UNITS={
 };
 const METRIC={
   sales:{unit:()=>UNITS[moneyUnit].label,label:"매출", money:true},
-  cars: {unit:()=>"대",                  label:"입차", money:false},
+  cars: {unit:()=>"천대",                 label:"입차", money:false},
   ppc:  {unit:()=>UNITS[moneyUnit].label,label:"입차단가", money:true}
 };
 function metricVal(r, mk){
@@ -744,10 +747,13 @@ function metricVal(r, mk){
   if(mk==="ppc") return (r.sales!=null && r.cars) ? r.sales/r.cars : null;
   return r[mk]!=null ? r[mk] : null;
 }
+/* 입차: 천대·소수1자리 표기 (계산은 원래 대수 그대로) */
+function carsFmt(v){ return v==null?"—":(v/1000).toLocaleString("ko-KR",{minimumFractionDigits:1,maximumFractionDigits:1}); }
 function metricFmt(v, mk){
   mk = mk||metric;
   if(v==null) return "—";
   if(mk==="ppc") return Math.round(v/1000).toLocaleString("ko-KR");  // 입차단가는 천원
+  if(mk==="cars") return carsFmt(v);                                 // 입차는 천대
   return METRIC[mk].money ? money(v) : fmt(v);
 }
 function unitOf(mk){ mk=mk||metric; return mk==="ppc" ? "천원" : METRIC[mk].unit(); }
@@ -1219,7 +1225,7 @@ function renderMTD(){
 
   $("mtd").innerHTML=cards.map(c=>{
     const cur=valOf(S,c.k), cmp=valOf(C,c.k);
-    const u = c.k==="ppc"?"천원" : (c.money?moneyU():"대");
+    const u = c.k==="ppc"?"천원" : (c.money?moneyU():"천대");
     const ach=(c.k==="sales"&&cur!=null&&tgt)?`<div class="ach">목표 대비 <b>${(cur/tgt*100).toFixed(1)}%</b></div>`:"";
     const f = v=>metricFmt(v,c.k);
     return `<div class="sum"><div class="lab">${c.lab}</div>
@@ -1290,9 +1296,9 @@ function wxLine(k,ck){
   }
   return `<div class="wx">${b.join("")}</div>`;
 }
-function metricLine(k,cur,cmp,u,isMoney){
+function metricLine(k,cur,cmp,u,isMoney,fmtFn){
   if(cur==null&&cmp==null) return "";
-  const f=isMoney?money:fmt;
+  const f=fmtFn||(isMoney?money:fmt);
   return `<div class="line"><span class="k">${k}</span><span class="v num">${f(cur)}</span><span class="u">${u}</span>
     <span class="cmp num">vs ${f(cmp)}</span>${rateEl(growth(cur,cmp))}</div>`;
 }
@@ -1308,7 +1314,7 @@ function dayCard(d){
   if(!r) inner+=`<div class="empty">실적 없음 · 눌러서 입력</div>`;
   else{
     inner+=metricLine("매출",r.sales,c?c.sales:null,moneyU(),true);
-    inner+=metricLine("입차",r.cars,c?c.cars:null,"대",false);
+    inner+=metricLine("입차",r.cars,c?c.cars:null,"천대",false,carsFmt);
     inner+=ppcLine(metricVal(r,"ppc"),metricVal(c,"ppc"));
     if(r.target_sales) inner+=`<div class="ach">매출 달성 <b>${(r.sales/r.target_sales*100).toFixed(1)}%</b></div>`;
     if(r.note) inner+=`<div class="notepill" data-note="${key}">✎ ${esc(r.note)}</div>`;
@@ -1341,13 +1347,13 @@ function periodTable(title, periods){
     return `<tr><td>${pr.label}</td>
       <td class="num">${money(s.cur)}<span class="sm">대비 ${money(s.cmp)}</span></td>
       ${rateTd(growth(s.cur,s.cmp))}
-      <td class="num">${fmt(c.cur)}<span class="sm">대비 ${fmt(c.cmp)}</span></td>
+      <td class="num">${carsFmt(c.cur)}<span class="sm">대비 ${carsFmt(c.cmp)}</span></td>
       ${rateTd(growth(c.cur,c.cmp))}
       <td class="num">${kwon(pcur)}<span class="sm">대비 ${kwon(pcmp)}</span></td>
       ${rateTd(growth(pcur,pcmp))}</tr>`;
   }).join("");
   $("view").innerHTML=`<div class="tblwrap"><table class="agg"><thead><tr>
-    <th>${title}</th><th>매출(${moneyU()})</th><th>신장</th><th>입차</th><th>신장</th><th>입차단가(천원)</th><th>신장</th>
+    <th>${title}</th><th>매출(${moneyU()})</th><th>신장</th><th>입차(천대)</th><th>신장</th><th>입차단가(천원)</th><th>신장</th>
   </tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 function renderMonth(){
@@ -1437,7 +1443,7 @@ function openDay(key){
       <span>신장률</span>
     </div>
     ${cmpRow("매출", r?r.sales:null, c?c.sales:null, moneyU(), true)}
-    ${cmpRow("입차", r?r.cars:null, c?c.cars:null, "대", false)}
+    ${cmpRow("입차", r?r.cars:null, c?c.cars:null, "천대", false, carsFmt)}
     ${cmpRow("입차단가", metricVal(r,"ppc"), metricVal(c,"ppc"), "천원", false, v=>v==null?"—":Math.round(v/1000).toLocaleString("ko-KR"))}
     <div class="crow"><div class="lab">날씨</div>${wxCell(w)}${wxCell(cw)}<div></div></div>
     <div class="goal">${goals}</div>
@@ -1594,6 +1600,17 @@ $("peClear").onclick=async()=>{
   if(editId===activeId) await loadMappings();
   renderMapRows(); loadView();
 };
+$("peRename").onclick=async()=>{
+  const cur=profiles.find(x=>x.id===editId);
+  const name=await askText("프로파일 이름", cur?cur.name:"");
+  if(!name || !cur || name===cur.name) return;
+  spin(true);
+  const {error}=await sb.from("compare_profiles").update({name}).eq("id",editId);
+  spin(false);
+  if(error) return say($("msgCmp"),"이름을 바꾸지 못했습니다. "+error.message);
+  cur.name=name; $("peName").textContent=name;
+  syncCmpLabel(); renderProfiles();
+};
 $("peDelete").onclick=async()=>{
   if(!await askOk("프로파일 삭제","이 프로파일과 안의 모든 대비일 지정을 삭제합니다.","삭제")) return;
   spin(true);
@@ -1719,7 +1736,7 @@ $("rgRun").onclick=async()=>{
       <span>신장률</span>
     </div>
     ${cmpRow("매출", A.sales, B.sales, moneyU(), true)}
-    ${cmpRow("입차", A.cars, B.cars, "대", false)}
+    ${cmpRow("입차", A.cars, B.cars, "천대", false, carsFmt)}
     ${cmpRow("입차단가", (A.sales!=null&&A.cars)?A.sales/A.cars:null, (B.sales!=null&&B.cars)?B.sales/B.cars:null, "천원", false, v=>v==null?"—":Math.round(v/1000).toLocaleString("ko-KR"))}
     <div class="goal">${goals}</div>
   </div>
