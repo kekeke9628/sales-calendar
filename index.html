@@ -277,7 +277,7 @@ textarea:focus{outline:2px solid var(--accent);outline-offset:-1px}
 .wx .wet,.wx .snowv{color:var(--sat);font-weight:650}
 .wx .cwx{margin-left:auto;color:var(--ink-3);opacity:.85}
 .line{display:flex;align-items:baseline;gap:7px;font-size:13px}
-.line .k{font-size:10px;color:var(--ink-3);width:26px;flex:none;font-weight:600}
+.line .k{font-size:10px;color:var(--ink-3);width:46px;flex:none;font-weight:600;white-space:nowrap}
 .line .v{font-weight:650}
 .line .u{font-size:9.5px;color:var(--ink-3)}
 .line .cmp{font-size:10.5px;color:var(--ink-3)}
@@ -286,12 +286,13 @@ textarea:focus{outline:2px solid var(--accent);outline-offset:-1px}
 .ach{font-size:10.5px;color:var(--ink-3)}
 .ach b{color:var(--ink-2);font-weight:600}
 
-table.agg{width:100%;border-collapse:collapse;margin:12px 0 24px;background:var(--card);
+.tblwrap{overflow-x:auto;margin:12px 0 24px;-webkit-overflow-scrolling:touch;scrollbar-width:thin}
+table.agg{width:100%;min-width:520px;border-collapse:collapse;background:var(--card);
   border:1px solid var(--rule);border-radius:var(--r);overflow:hidden;box-shadow:var(--shadow)}
-table.agg th{font-size:10px;color:var(--ink-3);font-weight:650;letter-spacing:.04em;padding:10px 6px;
+table.agg th{font-size:9.5px;color:var(--ink-3);font-weight:650;letter-spacing:.02em;padding:9px 5px;
   border-bottom:1px solid var(--rule);text-align:right;white-space:nowrap;background:var(--card-2)}
 table.agg th:first-child{text-align:left;padding-left:12px}
-table.agg td{font-size:12.5px;padding:12px 6px;border-bottom:1px solid var(--rule-2);text-align:right;white-space:nowrap}
+table.agg td{font-size:12px;padding:11px 5px;border-bottom:1px solid var(--rule-2);text-align:right;white-space:nowrap}
 table.agg td:first-child{text-align:left;padding-left:12px;font-weight:650}
 table.agg td .sm{display:block;font-size:9.5px;color:var(--ink-3);font-weight:400;margin-top:2px;white-space:nowrap}
 table.agg td .sm.dim{opacity:.72}
@@ -746,10 +747,10 @@ function metricVal(r, mk){
 function metricFmt(v, mk){
   mk = mk||metric;
   if(v==null) return "—";
-  if(mk==="ppc") return Math.round(v).toLocaleString("ko-KR");
+  if(mk==="ppc") return Math.round(v/1000).toLocaleString("ko-KR");  // 입차단가는 천원
   return METRIC[mk].money ? money(v) : fmt(v);
 }
-function unitOf(mk){ mk=mk||metric; return mk==="ppc" ? "원" : METRIC[mk].unit(); }
+function unitOf(mk){ mk=mk||metric; return mk==="ppc" ? "천원" : METRIC[mk].unit(); }
 
 /* ===== 공휴일 · 절기 =====
    매년 초에 이 두 표만 갱신하면 된다.
@@ -1218,7 +1219,7 @@ function renderMTD(){
 
   $("mtd").innerHTML=cards.map(c=>{
     const cur=valOf(S,c.k), cmp=valOf(C,c.k);
-    const u = c.k==="ppc"?"원" : (c.money?moneyU():"대");
+    const u = c.k==="ppc"?"천원" : (c.money?moneyU():"대");
     const ach=(c.k==="sales"&&cur!=null&&tgt)?`<div class="ach">목표 대비 <b>${(cur/tgt*100).toFixed(1)}%</b></div>`:"";
     const f = v=>metricFmt(v,c.k);
     return `<div class="sum"><div class="lab">${c.lab}</div>
@@ -1296,8 +1297,8 @@ function metricLine(k,cur,cmp,u,isMoney){
 }
 function ppcLine(cur,cmp){
   if(cur==null&&cmp==null) return "";
-  const f=v=>v==null?"—":Math.round(v).toLocaleString("ko-KR");
-  return `<div class="line"><span class="k">입차단가</span><span class="v num">${f(cur)}</span><span class="u">원</span>
+  const f=v=>v==null?"—":Math.round(v/1000).toLocaleString("ko-KR");
+  return `<div class="line"><span class="k">입차단가</span><span class="v num">${f(cur)}</span><span class="u">천원</span>
     <span class="cmp num">vs ${f(cmp)}</span>${rateEl(growth(cur,cmp))}</div>`;
 }
 function dayCard(d){
@@ -1329,18 +1330,24 @@ function renderDay(){
 
 /* ---------- 주차별 / 월별 ---------- */
 function periodTable(title, periods){
+  const ppcOf=a=>(a.cur!=null&&a.curCars)?a.cur/a.curCars:null;
   const rows=periods.map(pr=>{
     const s=aggYoY(pr.from,pr.to,"sales"), c=aggYoY(pr.from,pr.to,"cars");
+    /* 입차단가 = 기간 매출합 / 기간 입차합 */
+    const pcur=(s.cur!=null&&c.cur)?s.cur/c.cur:null;
+    const pcmp=(s.cmp!=null&&c.cmp)?s.cmp/c.cmp:null;
+    const kwon=v=>v==null?"—":Math.round(v/1000).toLocaleString("ko-KR");
     return `<tr><td>${pr.label}</td>
       <td class="num">${money(s.cur)}<span class="sm">대비 ${money(s.cmp)}</span></td>
       ${rateTd(growth(s.cur,s.cmp))}
-      <td class="num">${s.tgt?(s.cur/s.tgt*100).toFixed(1)+"%":"—"}</td>
       <td class="num">${fmt(c.cur)}<span class="sm">대비 ${fmt(c.cmp)}</span></td>
-      ${rateTd(growth(c.cur,c.cmp))}</tr>`;
+      ${rateTd(growth(c.cur,c.cmp))}
+      <td class="num">${kwon(pcur)}<span class="sm">대비 ${kwon(pcmp)}</span></td>
+      ${rateTd(growth(pcur,pcmp))}</tr>`;
   }).join("");
-  $("view").innerHTML=`<table class="agg"><thead><tr>
-    <th>${title}</th><th>매출(${moneyU()})</th><th>신장률</th><th>달성률</th><th>입차</th><th>신장률</th>
-  </tr></thead><tbody>${rows}</tbody></table>`;
+  $("view").innerHTML=`<div class="tblwrap"><table class="agg"><thead><tr>
+    <th>${title}</th><th>매출(${moneyU()})</th><th>신장</th><th>입차</th><th>신장</th><th>입차단가(천원)</th><th>신장</th>
+  </tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 function renderMonth(){
   const y=cursor.getFullYear();
@@ -1405,8 +1412,8 @@ function goalBar(label,cur,tgt,unit,isMoney){
     <div class="gl"><span>${label} 목표 ${f(tgt)}${unit}</span><b class="${hit?"hit":"miss"}">${pct.toFixed(1)}%</b></div>
     <div class="bar"><i class="${hit?"hit":"miss"}" style="width:${Math.min(pct,100).toFixed(0)}%"></i></div></div>`;
 }
-function cmpRow(lab,cur,cmp,unit,isMoney){
-  const g=growth(cur,cmp), f=isMoney?money:fmt;
+function cmpRow(lab,cur,cmp,unit,isMoney,fmtFn){
+  const g=growth(cur,cmp), f=fmtFn||(isMoney?money:fmt);
   const rt = g==null ? `<div class="rt flat">—</div>`
     : `<div class="rt num ${g>0?"up":g<0?"down":"flat"}">${g>0?"▲":g<0?"▼":"–"} ${Math.abs(g).toFixed(1)}%</div>`;
   return `<div class="crow"><div class="lab">${lab}</div>
@@ -1430,6 +1437,7 @@ function openDay(key){
     </div>
     ${cmpRow("매출", r?r.sales:null, c?c.sales:null, moneyU(), true)}
     ${cmpRow("입차", r?r.cars:null, c?c.cars:null, "대", false)}
+    ${cmpRow("입차단가", metricVal(r,"ppc"), metricVal(c,"ppc"), "천원", false, v=>v==null?"—":Math.round(v/1000).toLocaleString("ko-KR"))}
     <div class="crow"><div class="lab">날씨</div>${wxCell(w)}${wxCell(cw)}<div></div></div>
     <div class="goal">${goals}</div>
   </div>
@@ -1711,6 +1719,7 @@ $("rgRun").onclick=async()=>{
     </div>
     ${cmpRow("매출", A.sales, B.sales, moneyU(), true)}
     ${cmpRow("입차", A.cars, B.cars, "대", false)}
+    ${cmpRow("입차단가", (A.sales!=null&&A.cars)?A.sales/A.cars:null, (B.sales!=null&&B.cars)?B.sales/B.cars:null, "천원", false, v=>v==null?"—":Math.round(v/1000).toLocaleString("ko-KR"))}
     <div class="goal">${goals}</div>
   </div>
   ${noteList("기준 기간 특이사항", A.notes)}
