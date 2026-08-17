@@ -497,9 +497,9 @@ create policy "own" on compare_days for all
       <option value="bn">억</option>
     </select>
     <select class="dd" id="ddCmp" aria-label="대비 기준">
-      <option value="profile">대비일</option>
+      <option value="profile" selected>대비일</option>
       <option value="date">동일자</option>
-      <option value="weekday" selected>동요일</option>
+      <option value="weekday">동요일</option>
     </select>
     <button class="chip" id="btnRange">기간 비교</button>
     <button class="chip" id="btnRegion">여주</button>
@@ -707,7 +707,7 @@ create policy "own" on compare_days for all
 const CFG_KEY="salescal.cfg";
 const DEFAULT_REGION={name:"여주",lat:37.298,lon:127.637};
 
-let sb=null, cursor=new Date(), view="cal", metric="sales", moneyUnit="mn", sheetUrl="", cmpMode="weekday";
+let sb=null, cursor=new Date(), view="cal", metric="sales", moneyUnit="mn", sheetUrl="", cmpMode="profile";
 let store=new Map(), wx=new Map(), region=DEFAULT_REGION;
 let mappings=new Map(), cmpCursor=new Date();  // cmpCursor: 대비일 설정에서 보고 있는 월
 let editing=null, entCursor=new Date();
