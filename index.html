@@ -458,8 +458,31 @@ create policy "own" on compare_days for all
     <div class="field"><label>이메일</label><input id="inEmail" type="email" autocomplete="username"></div>
     <div class="field"><label>비밀번호</label><input id="inPw" type="password" autocomplete="current-password"></div>
     <button class="btn" id="btnLogin">로그인</button>
+    <button class="btn ghost" id="btnForgot">비밀번호를 잊으셨나요?</button>
     <button class="btn ghost" id="btnReconf">연결 정보 다시 입력</button>
     <div class="msg err" id="msgLogin"></div>
+  </div>
+</section>
+
+<section class="screen gate" id="scForgot">
+  <div class="gate-card">
+    <h1>비밀번호 재설정</h1>
+    <p class="sub">가입한 이메일로 재설정 링크를 보냅니다. 메일 속 링크를 <b>이 앱 주소에서</b> 열면 새 비밀번호를 정할 수 있습니다.</p>
+    <div class="field"><label>이메일</label><input id="inResetEmail" type="email" autocomplete="username"></div>
+    <button class="btn" id="btnSendReset">재설정 메일 보내기</button>
+    <button class="btn ghost" id="btnBackLogin">로그인으로 돌아가기</button>
+    <div class="msg" id="msgForgot"></div>
+  </div>
+</section>
+
+<section class="screen gate" id="scNewPw">
+  <div class="gate-card">
+    <h1>새 비밀번호 설정</h1>
+    <p class="sub">앞으로 사용할 비밀번호를 입력하세요. 8자 이상이어야 합니다.</p>
+    <div class="field"><label>새 비밀번호</label><input id="inNewPw" type="password" autocomplete="new-password"></div>
+    <div class="field"><label>새 비밀번호 확인</label><input id="inNewPw2" type="password" autocomplete="new-password"></div>
+    <button class="btn" id="btnSetPw">변경하기</button>
+    <div class="msg" id="msgNewPw"></div>
   </div>
 </section>
 
@@ -1039,14 +1062,28 @@ $("btnTheme").onclick=()=>{
 /* ---------- 접속 / 인증 ---------- */
 const readCfg=()=>{try{return JSON.parse(localStorage.getItem(CFG_KEY)||"null")}catch(e){return null}};
 const writeCfg=c=>{try{localStorage.setItem(CFG_KEY,JSON.stringify(c));return true}catch(e){return false}};
-const show=id=>["scSetup","scLogin","scApp"].forEach(s=>$(s).classList.toggle("on",s===id));
+const show=id=>["scSetup","scLogin","scForgot","scNewPw","scApp"].forEach(s=>$(s).classList.toggle("on",s===id));
+
+/* 비밀번호 재설정 메일의 링크로 돌아온 경우를 supabase 클라이언트가 주소를 지우기 전에 기억해 둔다 */
+const appUrl=()=>location.href.split(/[?#]/)[0];
+const AUTH_FRAG=(location.hash||"").replace(/^#/,"")+"&"+(location.search||"").replace(/^\?/,"");
+const URL_RECOVERY=/(^|&)type=recovery(&|$)/.test(AUTH_FRAG);
+const URL_AUTH_ERR=(()=>{const m=AUTH_FRAG.match(/(?:^|&)error_description=([^&]*)/);return m?decodeURIComponent(m[1].replace(/\+/g," ")):""})();
+
+function mkClient(url,key){
+  const c=supabase.createClient(url,key);
+  try{ c.auth.onAuthStateChange(ev=>{ if(ev==="PASSWORD_RECOVERY") show("scNewPw") }); }catch(e){}
+  return c;
+}
 
 $("btnSetup").onclick=()=>{
   const url=$("inUrl").value.trim().replace(/\/+$/,""), key=$("inKey").value.trim();
   if(!/^https:\/\/.+\.supabase\.co$/.test(url)) return say($("msgSetup"),"Project URL 형식이 맞지 않습니다. https://xxxx.supabase.co 형태여야 합니다.");
   if(key.length<40) return say($("msgSetup"),"anon key가 너무 짧습니다. 다시 확인해 주세요.");
   if(!writeCfg({url,key})) return say($("msgSetup"),"이 브라우저에 설정을 저장할 수 없습니다. 시크릿 모드가 아닌지 확인해 주세요.");
-  clear($("msgSetup")); sb=supabase.createClient(url,key); show("scLogin");
+  clear($("msgSetup")); sb=mkClient(url,key);
+  if(URL_RECOVERY){ sb.auth.getSession().then(({data})=>show(data.session?"scNewPw":"scLogin")); return; }
+  show("scLogin");
 };
 $("btnReconf").onclick=()=>{const c=readCfg(); if(c){$("inUrl").value=c.url;$("inKey").value=c.key} show("scSetup")};
 $("btnLogin").onclick=async()=>{
@@ -1060,6 +1097,38 @@ $("btnLogin").onclick=async()=>{
   enterApp();
 };
 $("miLogout").onclick=async()=>{ await sb.auth.signOut(); closeSheets(); show("scLogin"); };
+
+/* ---------- 비밀번호 재설정 ---------- */
+$("btnForgot").onclick=()=>{
+  clear($("msgForgot")); $("inResetEmail").value=$("inEmail").value.trim(); show("scForgot");
+};
+$("btnBackLogin").onclick=()=>{ clear($("msgLogin")); show("scLogin"); };
+$("btnSendReset").onclick=async()=>{
+  clear($("msgForgot"));
+  const email=$("inResetEmail").value.trim();
+  if(!email) return say($("msgForgot"),"이메일을 입력하세요.");
+  if(!sb) return say($("msgForgot"),"연결 정보가 없습니다. ‘연결 정보 다시 입력’을 먼저 진행하세요.");
+  spin(true); $("btnSendReset").disabled=true;
+  const {error}=await sb.auth.resetPasswordForEmail(email,{redirectTo:appUrl()});
+  spin(false); $("btnSendReset").disabled=false;
+  if(error) return say($("msgForgot"),"메일을 보내지 못했습니다. "+error.message);
+  say($("msgForgot"),"재설정 메일을 보냈습니다. 메일 속 링크를 열면 새 비밀번호를 정할 수 있습니다.","ok");
+};
+$("btnSetPw").onclick=async()=>{
+  clear($("msgNewPw"));
+  const p1=$("inNewPw").value, p2=$("inNewPw2").value;
+  if(p1.length<8) return say($("msgNewPw"),"비밀번호는 8자 이상이어야 합니다.");
+  if(p1!==p2) return say($("msgNewPw"),"두 비밀번호가 서로 다릅니다.");
+  if(!sb) return say($("msgNewPw"),"연결 정보가 없습니다. ‘연결 정보 다시 입력’을 먼저 진행하세요.");
+  spin(true); $("btnSetPw").disabled=true;
+  const {error}=await sb.auth.updateUser({password:p1});
+  spin(false); $("btnSetPw").disabled=false;
+  if(error) return say($("msgNewPw"),"변경하지 못했습니다. "+error.message);
+  $("inNewPw").value=""; $("inNewPw2").value="";
+  try{ history.replaceState(null,"",appUrl()); }catch(e){}
+  say($("msgNewPw"),"비밀번호를 변경했습니다. 잠시 후 앱으로 들어갑니다.","ok");
+  setTimeout(enterApp,800);
+};
 
 /* ---------- 설정 / 프로파일 ---------- */
 const putSetting=(key,value)=>sb.from("app_settings").upsert({key,value},{onConflict:"user_id,key"});
@@ -1956,9 +2025,20 @@ async function enterApp(){
 }
 (async function(){
   const cfg=readCfg();
-  if(!cfg) return show("scSetup");
-  sb=supabase.createClient(cfg.url,cfg.key);
+  if(!cfg){
+    if(URL_RECOVERY) say($("msgSetup"),"비밀번호 재설정 링크로 들어왔습니다. 연결 정보를 입력하면 새 비밀번호를 정할 수 있습니다.","ok");
+    return show("scSetup");
+  }
+  sb=mkClient(cfg.url,cfg.key);
+  if(URL_AUTH_ERR){
+    try{ history.replaceState(null,"",appUrl()); }catch(e){}
+    show("scForgot"); return say($("msgForgot"),"링크가 만료되었거나 이미 사용되었습니다. 재설정 메일을 다시 받아주세요. ("+URL_AUTH_ERR+")");
+  }
   const {data}=await sb.auth.getSession();
+  if(URL_RECOVERY){
+    if(data.session) return show("scNewPw");
+    show("scForgot"); return say($("msgForgot"),"링크가 만료되었거나 이미 사용되었습니다. 재설정 메일을 다시 받아주세요.");
+  }
   data.session ? enterApp() : show("scLogin");
 })();
 
